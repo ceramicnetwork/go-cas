@@ -1,6 +1,13 @@
-package batch
+package batcher
 
-func CollectAnchorBatch() {
+type StreamBatcher struct {
+}
+
+func NewStreamBatcher() *StreamBatcher {
+	return &StreamBatcher{}
+}
+
+func (b StreamBatcher) Batch() {
 	//cfg, err := aws.Config()
 	//if err != nil {
 	//	log.Fatalf("failed to create aws cfg: %v", err)

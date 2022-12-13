@@ -8,11 +8,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 
-	"github.com/smrz2001/go-cas"
+	"github.com/smrz2001/go-cas/models"
 )
 
 func ConfigWithOverride(customEndpoint string) (aws.Config, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), cas.DefaultHttpWaitTime)
+	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
 	endpointResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
@@ -32,7 +32,7 @@ func Config() (aws.Config, error) {
 		return ConfigWithOverride(awsEndpoint)
 	}
 	// Load the default configuration
-	ctx, cancel := context.WithTimeout(context.Background(), cas.DefaultHttpWaitTime)
+	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
 	return config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("AWS_REGION")))

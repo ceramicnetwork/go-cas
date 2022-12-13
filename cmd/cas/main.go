@@ -6,10 +6,9 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/smrz2001/go-cas/services/batch"
-	"github.com/smrz2001/go-cas/services/failure"
-	"github.com/smrz2001/go-cas/services/poll"
-	"github.com/smrz2001/go-cas/services/stream"
+	"github.com/smrz2001/go-cas/services/batcher"
+	"github.com/smrz2001/go-cas/services/loader"
+	"github.com/smrz2001/go-cas/services/poller"
 )
 
 func main() {
@@ -25,7 +24,7 @@ func main() {
 	//  - Poll Postgres for new anchor requests, which avoids changes to the existing CAS API service.
 	//  - Post request to Request queue.
 	//  - Write requests and updated Postgres polling checkpoint to DB.
-	go poll.LoadRequestsFromDb()
+	go poller.NewRequestPoller().Poll()
 
 	// 2. Stream loading service
 	//  - Read requests from the Request queue.
@@ -33,7 +32,7 @@ func main() {
 	//  - Wait for multi-query results:
 	//    - Write successful results to DB and post to Ready queue.
 	//    - TODO: Post failures to Failure queue
-	go stream.LoadStreamsFromCeramic()
+	go loader.NewStreamLoader().Load()
 
 	// 3. Batching service
 	//  - Read requests from Ready queue and add tips to cache.
@@ -41,10 +40,7 @@ func main() {
 	//    - If oldest entry in cache is older than batch expiration time (5 minutes).
 	//    - If number of streams in cache is equal to maximum batch size (1024).
 	//  - If yes, post job to Worker queue with batch.
-	go batch.CollectAnchorBatch()
-
-	// 4. TODO: Failure service
-	go failure.HandleFailures()
+	go batcher.NewStreamBatcher().Batch()
 
 	wg.Wait()
 }

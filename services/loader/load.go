@@ -1,11 +1,10 @@
-package stream
+package loader
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/emirpasic/gods/sets/hashset"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -13,86 +12,84 @@ import (
 	"sync"
 	"time"
 
+	"github.com/emirpasic/gods/sets/hashset"
+
 	"github.com/abevier/tsk/batch"
 	"github.com/abevier/tsk/result"
 	"github.com/abevier/tsk/taskqueue"
 
-	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/aws"
+	"github.com/smrz2001/go-cas/db"
+	"github.com/smrz2001/go-cas/models"
 )
 
+const MaxOutstandingRequests = 100
+
 // RequestCh is the "queue" for incoming requests
-var RequestCh = make(chan cas.StreamCid, cas.MaxOutstandingRequests)
-
-// CeramicUrl is the Ceramic node to hit for making multi-queries
-var CeramicUrl = os.Getenv("CERAMIC_URL")
-
-var tq *taskqueue.TaskQueue[[]cas.StreamCid, int]
-var be *batch.BatchExecutor[cas.StreamCid, int]
+var RequestCh = make(chan models.StreamCid, MaxOutstandingRequests)
 
 var StreamCtr = 0
 var CommitCtr = 0
 
 // TODO: Keep LRU cache of streams -> latest CID?
 
-func LoadStreamsFromCeramic() {
+type StreamLoader struct {
+	ceramicUrl string
+	stateDb    *db.StateDatabase
+	tq         *taskqueue.TaskQueue[[]models.StreamCid, int]
+	be         *batch.BatchExecutor[models.StreamCid, int]
+}
+
+func NewStreamLoader() *StreamLoader {
 	cfg, err := aws.Config()
 	if err != nil {
 		log.Fatalf("error creating aws cfg: %v", err)
 	}
-	db := aws.NewDynamoDb(cfg)
-
+	streamLoader := StreamLoader{
+		ceramicUrl: os.Getenv("CERAMIC_URL"),
+		stateDb:    db.NewStateDb(cfg),
+	}
 	// Task queue for making Ceramic multi-queries
-	tq = taskqueue.NewTaskQueue(taskqueue.TaskQueueOpts{
-		MaxWorkers:        cas.MaxNumTaskWorkers,
-		MaxQueueDepth:     cas.MaxOutstandingMultiQueries,
+	streamLoader.tq = taskqueue.NewTaskQueue(taskqueue.TaskQueueOpts{
+		MaxWorkers:        models.MaxNumTaskWorkers,
+		MaxQueueDepth:     models.MaxOutstandingMultiQueries,
 		FullQueueBehavior: taskqueue.BlockWhenFull,
-	}, func(streamCids []cas.StreamCid) (int, error) {
-		return ceramicMultiQuery(streamCids, db)
-	})
+	}, streamLoader.ceramicMultiQuery)
 	// Batch executor to collect incoming requests for Ceramic multi-queries
-	be = batch.NewBatchExecutor(batch.BatchOpts{
-		MaxSize:   cas.MaxStreamsPerMultiQuery,
-		MaxLinger: cas.MaxBatchLinger,
-	}, batchRequests)
-
+	streamLoader.be = batch.NewBatchExecutor(batch.BatchOpts{
+		MaxSize:   models.MaxStreamsPerMultiQuery,
+		MaxLinger: models.MaxRequestBatchLinger,
+	}, streamLoader.batchRequests)
+	return &streamLoader
+}
+func (l StreamLoader) Load() {
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
+
 	go func() {
 		defer wg.Done()
 
 		for {
-			select {
-			case streamCid := <-RequestCh:
-				{
-					// TODO: What should we do with the array of errors if batch execution fails?
-					wg.Add(1)
-					go func() {
-						defer wg.Done()
+			streamCid := <-RequestCh
 
-						_, err = be.Submit(context.Background(), streamCid)
-						if err != nil {
-							log.Printf("error submitting request: %v", err)
-						}
-					}()
-				}
-			default:
-				// TODO
+			_, err := l.be.Submit(context.Background(), streamCid)
+			if err != nil {
+				log.Printf("error submitting request for stream=%s, cid=%s: %v", streamCid.Id, streamCid.Id, err)
 			}
 		}
 	}()
 	wg.Wait()
 }
 
-func batchRequests(streamCids []cas.StreamCid) ([]result.Result[int], error) {
-	if _, err := tq.Submit(context.TODO(), streamCids); err != nil {
+func (l StreamLoader) batchRequests(streamCids []models.StreamCid) ([]result.Result[int], error) {
+	if _, err := l.tq.Submit(context.TODO(), streamCids); err != nil {
 		return nil, err
 	}
 	return []result.Result[int]{}, nil
 }
 
-func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error) {
-	mqCtx, mqCancel := context.WithTimeout(context.TODO(), cas.MultiQueryTimeout)
+func (l StreamLoader) ceramicMultiQuery(streamCids []models.StreamCid) (int, error) {
+	mqCtx, mqCancel := context.WithTimeout(context.TODO(), models.MultiQueryTimeout)
 	defer mqCancel()
 
 	type streamQuery struct {
@@ -109,7 +106,7 @@ func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error)
 		if !dedupedQueries.Contains(streamCid.Id) {
 			// Only make the Ceramic multi-query if we don't already have the stream or CID in the DB, or if it hasn't
 			// been loaded yet.
-			if dbStreamCid, err := db.GetCid(streamCid.Id, streamCid.Cid); err != nil {
+			if dbStreamCid, err := l.stateDb.GetCid(streamCid.Id, streamCid.Cid); err != nil {
 				log.Printf("error fetching stream=%s, cid=%s from db: %v", streamCid.Id, streamCid.Cid, err)
 				return -1, err
 			} else if (dbStreamCid == nil) || (dbStreamCid.Loaded == nil) || !*dbStreamCid.Loaded {
@@ -126,7 +123,7 @@ func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error)
 		return -1, err
 	}
 
-	req, err := http.NewRequestWithContext(mqCtx, "POST", CeramicUrl+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
+	req, err := http.NewRequestWithContext(mqCtx, "POST", l.ceramicUrl+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
 	if err != nil {
 		log.Printf("error creating multiquery request: %v", err)
 		return -1, err
@@ -147,7 +144,7 @@ func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error)
 		log.Printf("error in multiquery: %v", resp.StatusCode)
 		return -1, errors.New("error in multiquery")
 	}
-	mqResp := make(map[string]cas.StreamState)
+	mqResp := make(map[string]models.StreamState)
 	if err = json.Unmarshal(respBody, &mqResp); err != nil {
 		log.Printf("error unmarshaling multiquery response: %v", err)
 		return -1, err
@@ -160,7 +157,7 @@ func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error)
 			log.Printf("loaded %d streams, id=%s", StreamCtr, streamId)
 			// Only write CIDs beyond the newest CID already available for a stream (query by id-pos-index). This
 			// reduces the number of DB writes, but not the number of Ceramic multi-queries.
-			if latestStreamCid, err := db.GetLatestCid(streamId); err != nil {
+			if latestStreamCid, err := l.stateDb.GetLatestCid(streamId); err != nil {
 				log.Printf("error writing stream/commit to db: %v", err)
 			} else {
 				idx := 0
@@ -169,7 +166,7 @@ func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error)
 				}
 				for ; idx < len(streamState.Log); idx++ {
 					commitState := streamState.Log[idx]
-					streamCid := cas.StreamCid{
+					streamCid := models.StreamCid{
 						Id:         streamId,
 						Cid:        commitState.Cid,
 						Loaded:     &loaded,
@@ -183,7 +180,7 @@ func ceramicMultiQuery(streamCids []cas.StreamCid, db cas.Database) (int, error)
 						streamCid.StreamType = &streamState.Type
 						streamCid.Controller = &streamState.Metadata.Controllers[0]
 					}
-					if err = db.UpdateCid(&streamCid); err != nil {
+					if err = l.stateDb.UpdateCid(&streamCid); err != nil {
 						log.Printf("error writing stream/commit to db: %v", err)
 					}
 					CommitCtr++
