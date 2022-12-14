@@ -12,11 +12,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	casAws "github.com/smrz2001/go-cas/aws"
+	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/models"
 )
 
 const IdPosIndex = "id-pos-index"
+const IdTypeIndex = "id-ctp-index"
 const FamIdIndex = "fam-id-index"
 
 type StateDatabase struct {
@@ -34,7 +35,7 @@ func NewStateDb(cfg aws.Config) *StateDatabase {
 	var err error
 	if len(customEndpoint) > 0 {
 		log.Printf("newStateDb: using custom dynamodb aws endpoint: %s", customEndpoint)
-		cfg, err = casAws.ConfigWithOverride(customEndpoint)
+		cfg, err = cas.AwsConfigWithOverride(customEndpoint)
 		if err != nil {
 			log.Fatalf("failed to create aws cfg: %v", err)
 		}
@@ -135,60 +136,59 @@ func (sdb StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error)
 }
 
 func (sdb StateDatabase) GetLatestCid(streamId string) (*models.StreamCid, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
-	queryIn := dynamodb.QueryInput{
-		TableName:                aws.String(sdb.streamTable),
-		ExpressionAttributeNames: map[string]string{"#id": "id"},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":id": &types.AttributeValueMemberS{Value: streamId},
+	var latest *models.StreamCid = nil
+	if err := sdb.iterateCids(
+		&dynamodb.QueryInput{
+			TableName:              aws.String(sdb.streamTable),
+			IndexName:              aws.String(IdPosIndex),
+			KeyConditionExpression: aws.String("#id = :id"),
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":id": &types.AttributeValueMemberS{Value: streamId},
+			},
+			ExpressionAttributeNames: map[string]string{
+				"#id": "id",
+			},
+			ScanIndexForward: aws.Bool(false), // always descending
 		},
-		IndexName:              aws.String(IdPosIndex),
-		KeyConditionExpression: aws.String("#id = :id"),
-		Limit:                  aws.Int32(1),    // just one CID entry
-		ScanIndexForward:       aws.Bool(false), // descending order to get newest CID entry
-	}
-	queryOut, err := sdb.client.Query(ctx, &queryIn)
-	if err != nil {
+		func(streamCid *models.StreamCid) bool {
+			latest = streamCid
+			return false // always stop iteration after the first entry
+		},
+	); err != nil {
 		return nil, err
 	}
-	if len(queryOut.Items) > 0 {
-		streamCid := models.StreamCid{}
-		if err = attributevalue.UnmarshalMapWithOptions(queryOut.Items[0], &streamCid); err != nil {
-			return nil, err
-		}
-		return &streamCid, nil
-	}
-	return nil, nil
+	return latest, nil
 }
 
-func (sdb StateDatabase) CreateCid(streamCid *models.StreamCid) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
+func (sdb StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func(*models.StreamCid) bool) error {
+	p := dynamodb.NewQueryPaginator(sdb.client, queryInput)
+	for p.HasMorePages() {
+		err := func() error {
+			ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+			defer cancel()
 
-	updateItemIn := dynamodb.UpdateItemInput{
-		Key: map[string]types.AttributeValue{
-			"id":  &types.AttributeValueMemberS{Value: streamCid.Id},
-			"cid": &types.AttributeValueMemberS{Value: streamCid.Cid},
-		},
-		TableName:           aws.String(sdb.streamTable),
-		ConditionExpression: aws.String("attribute_not_exists(#cid)"),
-		// Only write this entry if it didn't already exist. This doesn't save write DynamoDB throughput but it can be
-		// used to avoid unnecessary Ceramic multi-queries for streams/CIDs we are already aware of.
-		ExpressionAttributeNames: map[string]string{"#cid": "cid"},
-	}
-	if _, err := sdb.client.UpdateItem(ctx, &updateItemIn); err != nil {
-		// To get a specific API error
-		var condUpdErr *types.ConditionalCheckFailedException
-		if errors.As(err, &condUpdErr) {
-			// Not an error, just indicate that we couldn't update the entry
-			return false, nil
+			page, err := p.NextPage(ctx)
+			if err != nil {
+				return err
+			}
+			var streamCidPage []*models.StreamCid
+			err = attributevalue.UnmarshalListOfMapsWithOptions(page.Items, &streamCidPage)
+			if err != nil {
+				log.Printf("iterateCids: unable to unmarshal entry: %v", err)
+				return err
+			}
+			for _, streamCid := range streamCidPage {
+				if !iter(streamCid) {
+					return nil
+				}
+			}
+			return nil
+		}()
+		if err != nil {
+			return err
 		}
-		log.Printf("error writing to db: %v", err)
-		return false, err
 	}
-	return true, nil
+	return nil
 }
 
 func (sdb StateDatabase) UpdateCid(streamCid *models.StreamCid) error {

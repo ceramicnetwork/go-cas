@@ -7,9 +7,22 @@ import (
 	"os"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smrz2001/go-cas/models"
+	"github.com/smrz2001/go-cas/queue/messages"
+)
+
+type RequestStatus uint8
+
+const (
+	RequestStatus_Pending RequestStatus = iota
+	RequestStatus_Processing
+	RequestStatus_Completed
+	RequestStatus_Failed
+	RequestStatus_Ready
 )
 
 type AnchorDatabase struct {
@@ -18,6 +31,17 @@ type AnchorDatabase struct {
 	user     string
 	password string
 	db       string
+}
+
+type anchorRequest struct {
+	Id        uuid.UUID
+	StreamId  string
+	Cid       string
+	CreatedAt time.Time
+	Status    int
+	Message   string
+	UpdatedAt time.Time
+	Pinned    bool
 }
 
 func NewAnchorDb() *AnchorDatabase {
@@ -30,7 +54,7 @@ func NewAnchorDb() *AnchorDatabase {
 	}
 }
 
-func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*models.AnchorRequest, error) {
+func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*messages.AnchorRequest, error) {
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer dbCancel()
 
@@ -45,7 +69,7 @@ func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*models.Ancho
 	rows, err := conn.Query(
 		context.Background(),
 		"select * from request where status = $1 and created_at > $2 LIMIT $3",
-		models.RequestStatus_Completed,
+		RequestStatus_Pending,
 		checkpoint.Format(models.DbDateFormat),
 		limit,
 	)
@@ -55,8 +79,8 @@ func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*models.Ancho
 	}
 	defer rows.Close()
 
-	anchorReqs := make([]*models.AnchorRequest, 0)
-	anchorReq := models.AnchorRequest{}
+	var anchorReqs []*messages.AnchorRequest
+	anchorReq := anchorRequest{}
 	for rows.Next() {
 		_ = rows.Scan(
 			&anchorReq.Id,
@@ -68,7 +92,12 @@ func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*models.Ancho
 			&anchorReq.UpdatedAt,
 			&anchorReq.Pinned,
 		)
-		anchorReqs = append(anchorReqs, &anchorReq)
+		anchorReqs = append(anchorReqs, &messages.AnchorRequest{
+			Id:        anchorReq.Id,
+			StreamId:  anchorReq.StreamId,
+			Cid:       anchorReq.Cid,
+			CreatedAt: anchorReq.CreatedAt,
+		})
 	}
 	return anchorReqs, nil
 }

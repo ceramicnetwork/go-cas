@@ -28,11 +28,11 @@ func main() {
 
 	// 2. Stream loading service
 	//  - Read requests from the Request queue.
-	//  - Send one or more multi-queries to Ceramic with corresponding stream load requests.
-	//  - Wait for multi-query results:
+	//  - Send one or more multiqueries to Ceramic with corresponding stream load requests.
+	//  - Wait for multiquery results:
 	//    - Write successful results to DB and post to Ready queue.
 	//    - TODO: Post failures to Failure queue
-	go loader.NewStreamLoader().Load()
+	go loader.NewCeramicLoader().Load()
 
 	// 3. Batching service
 	//  - Read requests from Ready queue and add tips to cache.

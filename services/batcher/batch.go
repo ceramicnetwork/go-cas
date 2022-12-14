@@ -8,12 +8,6 @@ func NewStreamBatcher() *StreamBatcher {
 }
 
 func (b StreamBatcher) Batch() {
-	//cfg, err := aws.Config()
-	//if err != nil {
-	//	log.Fatalf("failed to create aws cfg: %v", err)
-	//}
-	//db := aws.NewDynamoDb(cfg)
-
 	for {
 		// 1. Read from Ready queue
 		// 2. Add request to batch

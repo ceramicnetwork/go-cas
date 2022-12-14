@@ -1,197 +1,149 @@
 package loader
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"io/ioutil"
 	"log"
-	"net/http"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/emirpasic/gods/sets/hashset"
-
 	"github.com/abevier/tsk/batch"
-	"github.com/abevier/tsk/result"
+	"github.com/abevier/tsk/results"
 	"github.com/abevier/tsk/taskqueue"
 
-	"github.com/smrz2001/go-cas/aws"
+	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
+	"github.com/smrz2001/go-cas/queue"
+	"github.com/smrz2001/go-cas/queue/messages"
+	"github.com/smrz2001/go-cas/services/loader/ceramic"
 )
 
-const MaxOutstandingRequests = 100
-
-// RequestCh is the "queue" for incoming requests
-var RequestCh = make(chan models.StreamCid, MaxOutstandingRequests)
-
-var StreamCtr = 0
-var CommitCtr = 0
-
-// TODO: Keep LRU cache of streams -> latest CID?
-
-type StreamLoader struct {
-	ceramicUrl string
-	stateDb    *db.StateDatabase
-	tq         *taskqueue.TaskQueue[[]models.StreamCid, int]
-	be         *batch.BatchExecutor[models.StreamCid, int]
+type CeramicLoader struct {
+	cidLoader         *ceramic.CidLoader
+	stateDb           *db.StateDatabase
+	requestQ          *queue.Queue[*messages.AnchorRequest]
+	readyQ            *queue.Queue[*messages.ReadyRequest]
+	lookupTaskQ       *taskqueue.TaskQueue[ceramic.CidLookup, ceramic.CidLookupResult]
+	missingCidBatchEx *batch.BatchExecutor[ceramic.CidLookup, ceramic.CidLookupResult]
 }
 
-func NewStreamLoader() *StreamLoader {
-	cfg, err := aws.Config()
+func NewCeramicLoader() *CeramicLoader {
+	cfg, err := cas.AwsConfig()
 	if err != nil {
-		log.Fatalf("error creating aws cfg: %v", err)
+		log.Fatalf("newCeramicLoader: error creating aws cfg: %v", err)
 	}
-	streamLoader := StreamLoader{
-		ceramicUrl: os.Getenv("CERAMIC_URL"),
-		stateDb:    db.NewStateDb(cfg),
-	}
-	// Task queue for making Ceramic multi-queries
-	streamLoader.tq = taskqueue.NewTaskQueue(taskqueue.TaskQueueOpts{
-		MaxWorkers:        models.MaxNumTaskWorkers,
-		MaxQueueDepth:     models.MaxOutstandingMultiQueries,
+	cidLoader := ceramic.NewCidLoader()
+	// Stream lookup task queue
+	tqOpts := taskqueue.TaskQueueOpts{
+		MaxWorkers:        models.TaskQueueMaxWorkers,
+		MaxQueueDepth:     models.TaskQueueMaxQueueDepth,
 		FullQueueBehavior: taskqueue.BlockWhenFull,
-	}, streamLoader.ceramicMultiQuery)
-	// Batch executor to collect incoming requests for Ceramic multi-queries
-	streamLoader.be = batch.NewBatchExecutor(batch.BatchOpts{
-		MaxSize:   models.MaxStreamsPerMultiQuery,
-		MaxLinger: models.MaxRequestBatchLinger,
-	}, streamLoader.batchRequests)
-	return &streamLoader
-}
-func (l StreamLoader) Load() {
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-
-	go func() {
-		defer wg.Done()
-
-		for {
-			streamCid := <-RequestCh
-
-			_, err := l.be.Submit(context.Background(), streamCid)
-			if err != nil {
-				log.Printf("error submitting request for stream=%s, cid=%s: %v", streamCid.Id, streamCid.Id, err)
-			}
+	}
+	tqRun := func(ctx context.Context, lookup ceramic.CidLookup) (ceramic.CidLookupResult, error) {
+		return cidLoader.LoadCid(ctx, lookup)
+	}
+	// Missing CID lookup batch executor
+	beOpts := batch.BatchOpts{
+		MaxSize:   models.BatchMaxDepth,
+		MaxLinger: models.BatchMaxLinger,
+	}
+	beRun := func(lookups []ceramic.CidLookup) ([]results.Result[ceramic.CidLookupResult], error) {
+		// TODO: Take context from caller?
+		lookupResults, err := cidLoader.LoadMissingCids(context.Background(), lookups)
+		batchExResults := make([]results.Result[ceramic.CidLookupResult], len(lookupResults))
+		for idx, lookupResult := range lookupResults {
+			batchExResults[idx] = results.New[ceramic.CidLookupResult](lookupResult, nil)
 		}
-	}()
-	wg.Wait()
+		return batchExResults, err
+	}
+	return &CeramicLoader{
+		cidLoader,
+		db.NewStateDb(cfg),
+		queue.NewQueue[*messages.AnchorRequest](cfg, string(queue.QueueType_Request)),
+		queue.NewQueue[*messages.ReadyRequest](cfg, string(queue.QueueType_Ready)),
+		taskqueue.NewTaskQueue[ceramic.CidLookup, ceramic.CidLookupResult](tqOpts, tqRun),
+		batch.NewExecutor[ceramic.CidLookup, ceramic.CidLookupResult](beOpts, beRun),
+	}
 }
 
-func (l StreamLoader) batchRequests(streamCids []models.StreamCid) ([]result.Result[int], error) {
-	if _, err := l.tq.Submit(context.TODO(), streamCids); err != nil {
-		return nil, err
-	}
-	return []result.Result[int]{}, nil
-}
+func (l CeramicLoader) Load() {
+	// 1. Read a batch of messages from the queue.
+	// 2. Make stream load request.
+	// 3. Make multiquery for CIDs not found.
+	// 4. Persist loading result to the state DB, along with all commits discovered.
+	// 5. Post stream ID to Ready queue.
+	// 6. Remove request from the queue.
+	for {
+		// Read a batch of messages from the Request queue
+		if reqMsgs, err := l.requestQ.Dequeue(); err != nil {
+			log.Printf("load: error polling batch from request queue: %v", err)
+		} else if len(reqMsgs) > 0 {
+			func() {
+				batchCtx, batchCancel := context.WithTimeout(context.Background(), models.MaxBatchProcessingTime)
+				defer batchCancel()
 
-func (l StreamLoader) ceramicMultiQuery(streamCids []models.StreamCid) (int, error) {
-	mqCtx, mqCancel := context.WithTimeout(context.TODO(), models.MultiQueryTimeout)
-	defer mqCancel()
+				wg := sync.WaitGroup{}
+				wg.Add(len(reqMsgs))
 
-	type streamQuery struct {
-		StreamId string `json:"streamId"`
-	}
-	type multiQuery struct {
-		Queries []streamQuery `json:"queries"`
-	}
+				// For each message in the batch, make a request to Ceramic to load the stream.
+				for _, reqMsg := range reqMsgs {
+					streamId := reqMsg.Body.StreamId
+					cid := reqMsg.Body.Cid
+					rxId := *reqMsg.ReceiptHandle
+					go func() {
+						defer wg.Done()
 
-	mq := multiQuery{make([]streamQuery, 0, len(streamCids))}
-	// Dedup stream IDs in batch
-	dedupedQueries := hashset.New()
-	for _, streamCid := range streamCids {
-		if !dedupedQueries.Contains(streamCid.Id) {
-			// Only make the Ceramic multi-query if we don't already have the stream or CID in the DB, or if it hasn't
-			// been loaded yet.
-			if dbStreamCid, err := l.stateDb.GetCid(streamCid.Id, streamCid.Cid); err != nil {
-				log.Printf("error fetching stream=%s, cid=%s from db: %v", streamCid.Id, streamCid.Cid, err)
-				return -1, err
-			} else if (dbStreamCid == nil) || (dbStreamCid.Loaded == nil) || !*dbStreamCid.Loaded {
-				mq.Queries = append(mq.Queries, streamQuery{streamCid.Id})
-				dedupedQueries.Add(streamCid.Id)
-			} else {
-				log.Printf("skipping multiquery for stream=%s, cid=%s", streamCid.Id, streamCid.Cid)
-			}
-		}
-	}
-	mqBody, err := json.Marshal(mq)
-	if err != nil {
-		log.Printf("error creating multiquery json: %v", err)
-		return -1, err
-	}
-
-	req, err := http.NewRequestWithContext(mqCtx, "POST", l.ceramicUrl+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
-	if err != nil {
-		log.Printf("error creating multiquery request: %v", err)
-		return -1, err
-	}
-	req.Header.Add("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("error submitting multiquery: %v", err)
-		return -1, err
-	}
-	defer resp.Body.Close()
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("error reading multiquery response: %v", err)
-		return -1, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("error in multiquery: %v", resp.StatusCode)
-		return -1, errors.New("error in multiquery")
-	}
-	mqResp := make(map[string]models.StreamState)
-	if err = json.Unmarshal(respBody, &mqResp); err != nil {
-		log.Printf("error unmarshaling multiquery response: %v", err)
-		return -1, err
-	}
-	log.Printf("mq response: streams=%d", len(mqResp))
-	if len(mqResp) > 0 {
-		loaded := true
-		for streamId, streamState := range mqResp {
-			StreamCtr++
-			log.Printf("loaded %d streams, id=%s", StreamCtr, streamId)
-			// Only write CIDs beyond the newest CID already available for a stream (query by id-pos-index). This
-			// reduces the number of DB writes, but not the number of Ceramic multi-queries.
-			if latestStreamCid, err := l.stateDb.GetLatestCid(streamId); err != nil {
-				log.Printf("error writing stream/commit to db: %v", err)
-			} else {
-				idx := 0
-				if latestStreamCid != nil {
-					idx = *latestStreamCid.Position
+						if lookupResult, err := l.lookupTaskQ.Submit(batchCtx, ceramic.CidLookup{StreamId: streamId, Cid: cid}); err != nil {
+							log.Printf("load: error loading stream=%s, cid=%s from ceramic: %v", streamId, cid, err)
+							// TODO: Post to Failure queue
+						} else {
+							// We might have already decided to anchor this stream but if we didn't find the CID we were
+							// looking for, send a multiquery to see if we can find newer commits. We don't have to hold
+							// up anchoring for this stream in order to lookup the missing commit if we have newer
+							// commits to anchor anyway.
+							doAnchor := lookupResult.Anchor
+							if !lookupResult.CidFound {
+								// We can assume that if we reached here, we at least found the stream, which means we
+								// also have a genesis commit that we can use.
+								missingCidLookup := ceramic.CidLookup{
+									StreamId:   streamId,
+									GenesisCid: lookupResult.StreamState.Log[0].Cid,
+									Cid:        cid,
+									StreamType: lookupResult.StreamState.Type,
+								}
+								// TODO: If we find the commit we were looking for, use the updated stream state to
+								// decide whether to anchor this stream
+								batchResult, err := l.missingCidBatchEx.Submit(batchCtx, missingCidLookup)
+								if err != nil {
+									log.Printf("load: error loading stream=%s, cid=%s from ceramic: %v", streamId, cid, err)
+									// TODO: Post to Failure queue
+								} else if batchResult.Anchor {
+									doAnchor = batchResult.Anchor
+								}
+							}
+							// We found commits we haven't encountered before - make sure we anchor this stream, even if
+							// we didn't find the specific commit requested.
+							if doAnchor {
+								// TODO: Post the stream to the Ready queue
+								//if _, err = l.readyQ.Enqueue(&messages.ReadyRequest{StreamId: reqMsg.Body.StreamId}); err != nil {
+								//	log.Printf("load: error queueing ready request for stream=%s, cid=%s: %v", reqMsg.Body.StreamId, reqMsg.Body.Cid, err)
+								//	// TODO: Post to Failure queue or just not ACK from Request queue?
+								//}
+							}
+						}
+						// TODO: Batch deletion requests
+						// Delete the message from the queue
+						if err = l.requestQ.Ack(rxId); err != nil {
+							log.Printf("load: error acknowledging request for stream=%s, cid=%s, rxId=%s: %v", streamId, cid, rxId, err)
+						}
+					}()
 				}
-				for ; idx < len(streamState.Log); idx++ {
-					commitState := streamState.Log[idx]
-					streamCid := models.StreamCid{
-						Id:         streamId,
-						Cid:        commitState.Cid,
-						Loaded:     &loaded,
-						CommitType: &commitState.Type,
-						Position:   &idx,
-					}
-					if streamState.Metadata.Family != nil {
-						streamCid.Family = streamState.Metadata.Family
-					}
-					if idx == 0 {
-						streamCid.StreamType = &streamState.Type
-						streamCid.Controller = &streamState.Metadata.Controllers[0]
-					}
-					if err = l.stateDb.UpdateCid(&streamCid); err != nil {
-						log.Printf("error writing stream/commit to db: %v", err)
-					}
-					CommitCtr++
-					// Sleep for 1 second every 5 writes so we don't bust our throughput. TODO: Consider using another batch executor here.
-					if (CommitCtr % 5) == 0 {
-						time.Sleep(time.Second)
-					}
-					log.Printf("loaded %d commits, id=%s", CommitCtr, commitState.Cid)
-				}
-			}
+				// TODO: More sophisticated batch processing?
+				// Wait for a batch to be processed before pulling the next one
+				wg.Wait()
+			}()
+			// Sleep even if we had errors so that we don't get stuck in a tight loop
+			time.Sleep(models.DefaultTick)
 		}
 	}
-	return 0, nil
 }

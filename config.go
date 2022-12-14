@@ -1,4 +1,4 @@
-package aws
+package cas
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/smrz2001/go-cas/models"
 )
 
-func ConfigWithOverride(customEndpoint string) (aws.Config, error) {
+func AwsConfigWithOverride(customEndpoint string) (aws.Config, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
@@ -25,11 +25,11 @@ func ConfigWithOverride(customEndpoint string) (aws.Config, error) {
 	return config.LoadDefaultConfig(ctx, config.WithEndpointResolverWithOptions(endpointResolver))
 }
 
-func Config() (aws.Config, error) {
+func AwsConfig() (aws.Config, error) {
 	awsEndpoint := os.Getenv("AWS_ENDPOINT")
 	if len(awsEndpoint) > 0 {
 		log.Printf("config: using custom global aws endpoint: %s", awsEndpoint)
-		return ConfigWithOverride(awsEndpoint)
+		return AwsConfigWithOverride(awsEndpoint)
 	}
 	// Load the default configuration
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
