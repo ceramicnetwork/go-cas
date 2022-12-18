@@ -1,7 +1,13 @@
 package ceramic
 
 import (
+	"bytes"
 	"time"
+
+	"github.com/multiformats/go-multibase"
+	"github.com/multiformats/go-varint"
+
+	"github.com/ipfs/go-cid"
 
 	"github.com/smrz2001/go-cas/models"
 )
@@ -31,14 +37,32 @@ type Stream struct {
 	State    StreamState `json:"state"`
 }
 
-type CidLookup struct {
+type CidQuery struct {
 	StreamId   string
 	GenesisCid string
 	Cid        string
 	StreamType models.StreamType
 }
 
-type CidLookupResult struct {
+func (q CidQuery) mqId() string {
+	buf := bytes.Buffer{}
+	mqId := ""
+	// If the genesis CID is present, we're trying to find a missing CID, otherwise we're doing a plain stream query.
+	if len(q.GenesisCid) > 0 {
+		buf.Write(varint.ToUvarint(206))
+		buf.Write(varint.ToUvarint(uint64(q.StreamType)))
+		genesisCid, _ := cid.Parse(q.GenesisCid)
+		commitCid, _ := cid.Parse(q.Cid)
+		buf.Write(genesisCid.Bytes())
+		buf.Write(commitCid.Bytes())
+		mqId, _ = multibase.Encode(multibase.Base36, buf.Bytes())
+	} else {
+		mqId = q.StreamId
+	}
+	return mqId
+}
+
+type CidQueryResult struct {
 	StreamState *StreamState
 	Anchor      bool
 	CidFound    bool

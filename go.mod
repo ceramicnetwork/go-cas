@@ -3,7 +3,7 @@ module github.com/smrz2001/go-cas
 go 1.18
 
 require (
-	github.com/abevier/tsk v0.0.0-20221217041849-9cda621072a3
+	github.com/abevier/tsk v0.0.0-20221219225852-24e5c529c5f7
 	github.com/aws/aws-sdk-go-v2 v1.17.2
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.10.7

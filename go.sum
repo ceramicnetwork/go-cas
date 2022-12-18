@@ -1,5 +1,5 @@
-github.com/abevier/tsk v0.0.0-20221217041849-9cda621072a3 h1:xzIkhuKWTXTFE3pXENWxDjemmOLOaQfcQwPVrRtq2RU=
-github.com/abevier/tsk v0.0.0-20221217041849-9cda621072a3/go.mod h1:SPxdcPM7a24S4z58WtAE816IhZVX3nv2kmdLec7XDmk=
+github.com/abevier/tsk v0.0.0-20221219225852-24e5c529c5f7 h1:WHV9bBY0W2klAIJ+5ZRSOHukLDAcTg+4QbF1a3HAy1g=
+github.com/abevier/tsk v0.0.0-20221219225852-24e5c529c5f7/go.mod h1:5stFO5XvX4fFShiWpYidc8K6TNGpmOZrVXJjF2Nbhmw=
 github.com/aws/aws-sdk-go-v2 v1.17.2 h1:r0yRZInwiPBNpQ4aDy/Ssh3ROWsGtKDwar2JS8Lm+N8=
 github.com/aws/aws-sdk-go-v2 v1.17.2/go.mod h1:uzbQtefpm44goOPmdKyAlXSNcwlRgF3ePWVW6EtJvvw=
 github.com/aws/aws-sdk-go-v2/config v1.18.4 h1:VZKhr3uAADXHStS/Gf9xSYVmmaluTUfkc0dcbPiDsKE=

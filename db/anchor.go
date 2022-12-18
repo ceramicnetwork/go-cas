@@ -68,7 +68,7 @@ func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*messages.Anc
 
 	rows, err := conn.Query(
 		context.Background(),
-		"select * from request where status = $1 and created_at > $2 LIMIT $3",
+		"SELECT * FROM request WHERE status = $1 AND created_at > $2 ORDER BY created_at LIMIT $3",
 		RequestStatus_Pending,
 		checkpoint.Format(models.DbDateFormat),
 		limit,
@@ -98,6 +98,9 @@ func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*messages.Anc
 			Cid:       anchorReq.Cid,
 			CreatedAt: anchorReq.CreatedAt,
 		})
+	}
+	if len(anchorReqs) > 0 {
+		log.Printf("anchorDb: found %d requests, start=%s, end=%s", len(anchorReqs), anchorReqs[0].CreatedAt, anchorReqs[len(anchorReqs)-1].CreatedAt)
 	}
 	return anchorReqs, nil
 }

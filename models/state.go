@@ -5,7 +5,8 @@ import "time"
 type CheckpointType string
 
 const (
-	CheckpointType_Poll CheckpointType = "poll"
+	CheckpointType_Poll      CheckpointType = "poll"
+	CheckpointType_Migration CheckpointType = "migration"
 )
 
 type Checkpoint struct {
@@ -21,5 +22,6 @@ type StreamCid struct {
 	Controller *string     `dynamodbav:"ctl,omitempty"`
 	Family     *string     `dynamodbav:"fam,omitempty"`
 	CommitType *CommitType `dynamodbav:"ctp,omitempty"`
+	Loaded     *bool       `dynamodbav:"lod,omitempty"`
 	Position   *int        `dynamodbav:"pos,omitempty"` // commit index in stream log
 }

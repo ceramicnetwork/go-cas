@@ -6,7 +6,13 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"time"
+
+	"github.com/abevier/tsk/batch"
+	"github.com/abevier/tsk/futures"
+	"github.com/abevier/tsk/results"
+	"github.com/abevier/tsk/taskqueue"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
@@ -26,6 +32,7 @@ const (
 
 const SqsBatchSize = 10
 const SqsVisibilityTimeout = 3 * time.Minute
+const SqsMaxBatchLinger = 5 * time.Second
 
 type QueueMessage[T any] struct {
 	Body              T
@@ -41,8 +48,12 @@ type Queueable[T any] interface {
 }
 
 type Queue[T Queueable[T]] struct {
-	client *sqs.Client
-	url    string
+	client         *sqs.Client
+	sendExecutor   *batch.BatchExecutor[T, string]
+	sendTaskQ      *taskqueue.TaskQueue[[]T, []results.Result[string]]
+	deleteExecutor *batch.BatchExecutor[string, string]
+	deleteTaskQ    *taskqueue.TaskQueue[[]string, []results.Result[string]]
+	url            string
 }
 
 func NewQueue[T Queueable[T]](cfg aws.Config, name string) *Queue[T] {
@@ -59,32 +70,84 @@ func NewQueue[T Queueable[T]](cfg aws.Config, name string) *Queue[T] {
 	if err != nil {
 		log.Fatalf("newQueue: failed to retrieve %s queue url: %v", name, err)
 	}
-	return &Queue[T]{
-		client,
-		*getUrlOut.QueueUrl,
+	q := Queue[T]{
+		client: client,
+		url:    *getUrlOut.QueueUrl,
 	}
+	beOpts := batch.BatchOpts{
+		MaxSize:   SqsBatchSize,
+		MaxLinger: SqsMaxBatchLinger,
+	}
+	tqOpts := taskqueue.TaskQueueOpts{
+		MaxWorkers:        models.TaskQueueMaxWorkers,
+		MaxQueueDepth:     models.TaskQueueMaxQueueDepth,
+		FullQueueStrategy: taskqueue.BlockWhenFull,
+	}
+	// TODO: Can we use better contexts below?
+	// Have each batch executor run function go through a task queue to limit concurrency while processing the batches
+	q.sendExecutor = batch.NewExecutor[T, string](beOpts, func(messages []T) ([]results.Result[string], error) {
+		return q.sendTaskQ.Submit(context.Background(), messages)
+	})
+	q.deleteExecutor = batch.NewExecutor[string, string](beOpts, func(receiptHandles []string) ([]results.Result[string], error) {
+		return q.deleteTaskQ.Submit(context.Background(), receiptHandles)
+	})
+	q.sendTaskQ = taskqueue.NewTaskQueue[[]T](tqOpts, func(ctx context.Context, messages []T) ([]results.Result[string], error) {
+		return q.enqueueBatch(messages)
+	})
+	q.deleteTaskQ = taskqueue.NewTaskQueue[[]string](tqOpts, func(ctx context.Context, receiptHandles []string) ([]results.Result[string], error) {
+		return q.deleteBatch(receiptHandles)
+	})
+	return &q
 }
 
-func (q Queue[T]) Enqueue(message T) (string, error) {
-	// TODO: Use batch executor to consolidate SQS calls since we're charged per API call.
+func (q Queue[T]) EnqueueF(message T) *futures.Future[string] {
+	return q.sendExecutor.SubmitF(message)
+}
+
+func (q Queue[T]) Enqueue(ctx context.Context, message T) (string, error) {
+	return q.EnqueueF(message).Get(ctx)
+}
+
+func (q Queue[T]) enqueueBatch(messages []T) ([]results.Result[string], error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
-	messageBody, err := json.Marshal(message)
+	// We need to map back two levels of results, from the batch construction and the batch send.
+	batchResults := make([]results.Result[string], len(messages))
+
+	entries := make([]types.SendMessageBatchRequestEntry, 0, len(messages))
+	for idx, message := range messages {
+		messageBody, err := json.Marshal(message)
+		if err != nil {
+			batchResults[idx] = results.New[string]("", err)
+			continue
+		}
+		entries = append(entries, types.SendMessageBatchRequestEntry{
+			Id:                     aws.String(strconv.Itoa(idx)), // Use the loop index so we can map results back
+			MessageBody:            aws.String(string(messageBody)),
+			MessageDeduplicationId: message.GetMessageDeduplicationId(),
+			MessageGroupId:         message.GetMessageGroupId(),
+		})
+	}
+	sendMsgBatchIn := sqs.SendMessageBatchInput{
+		Entries:  entries,
+		QueueUrl: aws.String(q.url),
+	}
+	sendMsgBatchOut, err := q.client.SendMessageBatch(ctx, &sendMsgBatchIn)
 	if err != nil {
-		return "", fmt.Errorf("enqueue: failed to serialize message: %v", err)
+		// Let the batch executor populate the error. We'll lose information about any marshaling errors from above, but
+		// that's ok.
+		return nil, err
 	}
-	sendMsgIn := sqs.SendMessageInput{
-		MessageBody:            aws.String(string(messageBody)),
-		QueueUrl:               aws.String(q.url),
-		MessageDeduplicationId: message.GetMessageDeduplicationId(),
-		MessageGroupId:         message.GetMessageGroupId(),
+	for _, success := range sendMsgBatchOut.Successful {
+		idx, _ := strconv.Atoi(*success.Id)
+		batchResults[idx] = results.New[string](*success.MessageId, nil)
 	}
-	sendMsgOut, err := q.client.SendMessage(ctx, &sendMsgIn)
-	if err != nil {
-		return "", err
+	for _, failure := range sendMsgBatchOut.Failed {
+		idx, _ := strconv.Atoi(*failure.Id)
+		batchResults[idx] = results.New[string]("", fmt.Errorf("enqueueBatch: %s:%s", *failure.Code, *failure.Message))
 	}
-	return *sendMsgOut.MessageId, nil
+	return batchResults, nil
 }
 
 func (q Queue[T]) Dequeue() ([]*QueueMessage[T], error) {
@@ -95,8 +158,7 @@ func (q Queue[T]) Dequeue() ([]*QueueMessage[T], error) {
 		QueueUrl:            aws.String(q.url),
 		MaxNumberOfMessages: SqsBatchSize,
 		VisibilityTimeout:   int32(SqsVisibilityTimeout.Seconds()),
-		// TODO: Use WaitTimeSeconds
-		WaitTimeSeconds: 0,
+		WaitTimeSeconds:     0,
 	}
 	rxMsgOut, err := q.client.ReceiveMessage(ctx, &rxMsgIn)
 	if err != nil {
@@ -118,17 +180,43 @@ func (q Queue[T]) Dequeue() ([]*QueueMessage[T], error) {
 	return msgs, nil
 }
 
-func (q Queue[T]) Ack(rxId string) error {
+func (q Queue[T]) DeleteF(receiptHandle string) *futures.Future[string] {
+	return q.deleteExecutor.SubmitF(receiptHandle)
+}
+
+func (q Queue[T]) Delete(ctx context.Context, receiptHandle string) (string, error) {
+	return q.DeleteF(receiptHandle).Get(ctx)
+}
+
+func (q Queue[T]) deleteBatch(receiptHandles []string) ([]results.Result[string], error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
-	deleteMsgIn := sqs.DeleteMessageInput{
-		QueueUrl:      aws.String(q.url),
-		ReceiptHandle: aws.String(rxId),
+	// We need to map back two levels of results, from the batch construction and the batch delete.
+	batchResults := make([]results.Result[string], len(receiptHandles))
+
+	entries := make([]types.DeleteMessageBatchRequestEntry, 0, len(receiptHandles))
+	for idx, rxId := range receiptHandles {
+		entries = append(entries, types.DeleteMessageBatchRequestEntry{
+			Id:            aws.String(strconv.Itoa(idx)),
+			ReceiptHandle: aws.String(rxId),
+		})
 	}
-	_, err := q.client.DeleteMessage(ctx, &deleteMsgIn)
+	deleteMsgBatchIn := sqs.DeleteMessageBatchInput{
+		Entries:  entries,
+		QueueUrl: aws.String(q.url),
+	}
+	deleteMsgBatchOut, err := q.client.DeleteMessageBatch(ctx, &deleteMsgBatchIn)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	for _, success := range deleteMsgBatchOut.Successful {
+		idx, _ := strconv.Atoi(*success.Id)
+		batchResults[idx] = results.New[string](*success.Id, nil)
+	}
+	for _, failure := range deleteMsgBatchOut.Failed {
+		idx, _ := strconv.Atoi(*failure.Id)
+		batchResults[idx] = results.New[string]("", fmt.Errorf("deleteBatch: %s:%s", *failure.Code, *failure.Message))
+	}
+	return batchResults, nil
 }

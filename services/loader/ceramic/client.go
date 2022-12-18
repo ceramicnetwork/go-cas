@@ -9,11 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-
-	"github.com/multiformats/go-multibase"
-	"github.com/multiformats/go-varint"
-
-	"github.com/ipfs/go-cid"
 )
 
 type CeramicClient struct {
@@ -30,7 +25,8 @@ func (c CeramicClient) query(ctx context.Context, streamId string) (*StreamState
 	qCtx, qCancel := context.WithTimeout(ctx, CeramicServerTimeout)
 	defer qCancel()
 
-	req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId, nil)
+	req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId+"?sync=1", nil)
+	//req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId, nil)
 	if err != nil {
 		log.Printf("query: error creating stream request: %v", err)
 		return nil, err
@@ -48,8 +44,8 @@ func (c CeramicClient) query(ctx context.Context, streamId string) (*StreamState
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("error in multiquery: %v", resp.StatusCode)
-		return nil, errors.New("query: error in stream request")
+		log.Printf("error in query: %v, %s", resp.StatusCode, respBody)
+		return nil, errors.New("query: error in response")
 	}
 	stream := Stream{}
 	if err = json.Unmarshal(respBody, &stream); err != nil {
@@ -61,8 +57,8 @@ func (c CeramicClient) query(ctx context.Context, streamId string) (*StreamState
 	return &stream.State, nil
 }
 
-func (c CeramicClient) multiquery(ctx context.Context, lookups []CidLookup) ([]*StreamState, error) {
-	log.Printf("multiquery: %+v", lookups)
+func (c CeramicClient) multiquery(ctx context.Context, queries []*CidQuery) (map[string]*StreamState, error) {
+	log.Printf("multiquery: %+v", queries)
 
 	type streamQuery struct {
 		StreamId string `json:"streamId"`
@@ -70,12 +66,9 @@ func (c CeramicClient) multiquery(ctx context.Context, lookups []CidLookup) ([]*
 	type multiquery struct {
 		Queries []*streamQuery `json:"queries"`
 	}
-	mqId2Lookup := make(map[string]*CidLookup, len(lookups))
-	mq := multiquery{make([]*streamQuery, len(lookups))}
-	for idx, lookup := range lookups {
-		mqId := c.encodeMultiqueryId(lookup)
-		mqId2Lookup[mqId] = &lookup
-		mq.Queries[idx] = &streamQuery{mqId}
+	mq := multiquery{make([]*streamQuery, len(queries))}
+	for idx, query := range queries {
+		mq.Queries[idx] = &streamQuery{query.mqId()}
 	}
 	mqBody, err := json.Marshal(mq)
 	if err != nil {
@@ -85,7 +78,7 @@ func (c CeramicClient) multiquery(ctx context.Context, lookups []CidLookup) ([]*
 	ctx, cancel := context.WithTimeout(context.Background(), CeramicServerTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/multiqueries?sync=1", bytes.NewBuffer(mqBody))
 	if err != nil {
 		log.Printf("error creating multiquery request: %v", err)
 		return nil, err
@@ -104,36 +97,13 @@ func (c CeramicClient) multiquery(ctx context.Context, lookups []CidLookup) ([]*
 	}
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("error in multiquery: %v", resp.StatusCode)
-		return nil, errors.New("error in multiquery")
+		return nil, errors.New("multiquery: error in response")
 	}
 	mqResp := make(map[string]*StreamState)
 	if err = json.Unmarshal(respBody, &mqResp); err != nil {
 		log.Printf("error unmarshaling multiquery response: %v", err)
 		return nil, err
 	}
-	log.Printf("mq response: streams=%d, resp=%v", len(mqResp), mqResp)
-	streamStates := make([]*StreamState, len(mqResp))
-	if len(mqResp) > 0 {
-		idx := 0
-		for mqId, streamState := range mqResp {
-			streamState.Id = mqId2Lookup[mqId].StreamId
-			streamStates[idx] = streamState
-			idx++
-		}
-		log.Printf("multiquery: success: %+v", streamStates)
-		return streamStates, nil
-	}
-	return nil, nil
-}
-
-func (c CeramicClient) encodeMultiqueryId(lookup CidLookup) string {
-	buf := bytes.Buffer{}
-	buf.Write(varint.ToUvarint(206))
-	buf.Write(varint.ToUvarint(uint64(lookup.StreamType)))
-	genesisCid, _ := cid.Parse(lookup.GenesisCid)
-	commitCid, _ := cid.Parse(lookup.Cid)
-	buf.Write(genesisCid.Bytes())
-	buf.Write(commitCid.Bytes())
-	res, _ := multibase.Encode(multibase.Base36, buf.Bytes())
-	return res
+	log.Printf("mq response: streams=%d, resp=%+v", len(mqResp), mqResp)
+	return mqResp, nil
 }

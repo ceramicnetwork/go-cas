@@ -2,16 +2,25 @@ package ceramic
 
 import (
 	"context"
+	"log"
+	"time"
+
+	"github.com/abevier/tsk/batch"
+	"github.com/abevier/tsk/futures"
+	"github.com/abevier/tsk/results"
+	"github.com/abevier/tsk/taskqueue"
+
 	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
-	"log"
-	"time"
 )
 
+// TODO: Add a separate BE/TQ for missing CID queries so that we can queue them WHILE still processing regular stream queries
 type CidLoader struct {
-	client  *CeramicClient
-	stateDb *db.StateDatabase
+	client        *CeramicClient
+	stateDb       *db.StateDatabase
+	batchExecutor *batch.BatchExecutor[*CidQuery, CidQueryResult]
+	taskQ         *taskqueue.TaskQueue[[]*CidQuery, []results.Result[CidQueryResult]]
 }
 
 func NewCidLoader() *CidLoader {
@@ -19,76 +28,77 @@ func NewCidLoader() *CidLoader {
 	if err != nil {
 		log.Fatalf("error creating aws cfg: %v", err)
 	}
-	ceramicClient := NewCeramicClient()
-	return &CidLoader{
-		ceramicClient,
-		db.NewStateDb(cfg),
+	cidLoader := CidLoader{
+		client:  NewCeramicClient(),
+		stateDb: db.NewStateDb(cfg),
 	}
+	// Stream query task queue
+	tqOpts := taskqueue.TaskQueueOpts{
+		MaxWorkers:        models.TaskQueueMaxWorkers,
+		MaxQueueDepth:     models.TaskQueueMaxQueueDepth,
+		FullQueueStrategy: taskqueue.BlockWhenFull,
+	}
+	// Missing CID multiquery batch executor
+	beOpts := batch.BatchOpts{
+		MaxSize:   models.BatchMaxDepth,
+		MaxLinger: models.BatchMaxLinger,
+	}
+	cidLoader.batchExecutor = batch.NewExecutor[*CidQuery, CidQueryResult](beOpts, func(queries []*CidQuery) ([]results.Result[CidQueryResult], error) {
+		// TODO: Can we use a better context?
+		return cidLoader.taskQ.Submit(context.Background(), queries)
+	})
+	cidLoader.taskQ = taskqueue.NewTaskQueue[[]*CidQuery, []results.Result[CidQueryResult]](tqOpts, cidLoader.multiquery)
+	return &cidLoader
 }
 
-// LoadCid does the following things:
-// - Try to load the stream and find the CID. Once CAS w/o Ceramic is implemented, the loading step won't be necessary,
-//   and we can decide what to do with the stream using just the state DB.
-// - If found, return all CIDs from the stream so that the caller can decide if/when/how to store them.
-//   - This would resolve the future
-// - If not found, send a multi-query to force the Ceramic node to reload the stream from the network.
-//   - This can be also be put in a batch executor so we can combine multiple CID requests into a single multiquery
-// - If we get more information in the mq response, return that to the caller.
-//   - This would resolve the future
-// - If not found, this would fail the future and result in a message being posted to the failure queue.
-//   - For now, till the batcher is implemented, this would just leave a non-loaded entry in the state DB that we can
-//     come back to later.
-func (l CidLoader) LoadCid(ctx context.Context, lookup CidLookup) (CidLookupResult, error) {
-	// Check if the stream/CID has already been looked up and stored in the state DB
-	streamCid, err := l.stateDb.GetCid(lookup.StreamId, lookup.Cid)
-	if err != nil {
-		log.Printf("loadCid: error loading stream=%s, cid=%s from db: %v", lookup.StreamId, lookup.Cid, err)
-		return CidLookupResult{nil, false, false}, err
-	} else if streamCid == nil {
-		qCtx, qCancel := context.WithTimeout(ctx, CeramicClientTimeout)
-		defer qCancel()
-
-		// Load the stream
-		streamState, err := l.client.query(qCtx, lookup.StreamId)
-		if err != nil {
-			log.Printf("loadCid: error submitting task: %v", err)
-			return CidLookupResult{nil, false, false}, err
-		}
-		return l.processStream(streamState, lookup.Cid)
-	}
-	// Return CID found = true but anchor needed = false since we already have this CID in the DB and must have already
-	// processed it and its anchor request.
-	log.Printf("processStream: stream=%s, cid=%s found in db", lookup.StreamId, lookup.Cid)
-	return CidLookupResult{nil, false, true}, nil
+func (cl CidLoader) MultiqueryF(query *CidQuery) *futures.Future[CidQueryResult] {
+	// We can assume that if we reached here, we at least found the stream, which means we also have a genesis commit
+	// that we can use.
+	return cl.batchExecutor.SubmitF(query)
 }
 
-func (l CidLoader) LoadMissingCids(ctx context.Context, lookups []CidLookup) ([]CidLookupResult, error) {
-	mqCtx, mqCancel := context.WithTimeout(ctx, CeramicClientTimeout)
-	defer mqCancel()
+func (cl CidLoader) Multiquery(ctx context.Context, query *CidQuery) (CidQueryResult, error) {
+	return cl.MultiqueryF(query).Get(ctx)
+}
 
+func (cl CidLoader) query(ctx context.Context, query CidQuery) (results.Result[CidQueryResult], error) {
 	// Load the stream
-	streamStates, err := l.client.multiquery(mqCtx, lookups)
-	if err != nil {
-		log.Printf("loadMissingCids: error submitting task: %v", err)
-		return nil, err
+	if streamState, err := cl.client.query(ctx, query.StreamId); err != nil {
+		log.Printf("loadCid: error submitting task: %v", err)
+		return results.Result[CidQueryResult]{}, err
+	} else if queryResult, err := cl.processStream(streamState, query.Cid); err != nil {
+		return results.Result[CidQueryResult]{}, err
+	} else {
+		return results.New[CidQueryResult](queryResult, nil), nil
 	}
-	lookupResults := make([]CidLookupResult, len(lookups))
-	for idx, streamState := range streamStates {
-		lookupResult, err := l.processStream(streamState, lookups[idx].Cid)
-		if err != nil {
-			return nil, err
-		}
-		lookupResults[idx] = lookupResult
-	}
-	return lookupResults, nil
 }
 
-func (l CidLoader) processStream(streamState *StreamState, cid string) (CidLookupResult, error) {
+func (cl CidLoader) multiquery(ctx context.Context, queries []*CidQuery) ([]results.Result[CidQueryResult], error) {
+	queryResults := make([]results.Result[CidQueryResult], len(queries))
+	if mqResp, err := cl.client.multiquery(ctx, queries); err != nil {
+		return nil, err
+	} else {
+		for idx, query := range queries {
+			queryResult := CidQueryResult{}
+			if streamState, found := mqResp[query.mqId()]; found {
+				streamState.Id = query.StreamId
+				queryResult, err = cl.processStream(streamState, query.Cid)
+				if err != nil {
+					return nil, err
+				}
+			}
+			queryResults[idx] = results.New[CidQueryResult](queryResult, nil)
+		}
+	}
+	return queryResults, nil
+}
+
+func (cl CidLoader) processStream(streamState *StreamState, cid string) (CidQueryResult, error) {
 	// Get the latest CID for this stream from the state DB
 	pos := -1
-	if latestStreamCid, err := l.stateDb.GetLatestCid(streamState.Id); err != nil {
+	if latestStreamCid, err := cl.stateDb.GetLatestCid(streamState.Id); err != nil {
 		log.Printf("loadCid: error loading stream=%s from db: %v", streamState.Id, err)
-		return CidLookupResult{nil, false, false}, err
+		return CidQueryResult{}, err
 	} else if latestStreamCid != nil { // stream has been loaded in the past
 		// Note the position of the latest entry so that we can use it with the loaded stream log
 		pos = *latestStreamCid.Position
@@ -103,15 +113,15 @@ func (l CidLoader) processStream(streamState *StreamState, cid string) (CidLooku
 		}
 		// Write all new CIDs to the state DB
 		if idx > pos {
-			if err := l.storeStreamCid(streamState, idx); err != nil {
-				return CidLookupResult{nil, false, false}, err
+			if err := cl.storeStreamCid(streamState, idx); err != nil {
+				return CidQueryResult{}, err
 			}
 		}
 	}
-	return CidLookupResult{streamState, doAnchor, cidFound}, nil
+	return CidQueryResult{streamState, doAnchor, cidFound}, nil
 }
 
-func (l CidLoader) storeStreamCid(streamState *StreamState, idx int) error {
+func (cl CidLoader) storeStreamCid(streamState *StreamState, idx int) error {
 	streamCid := models.StreamCid{
 		StreamId:   streamState.Id,
 		Cid:        streamState.Log[idx].Cid,
@@ -126,7 +136,7 @@ func (l CidLoader) storeStreamCid(streamState *StreamState, idx int) error {
 		streamCid.Controller = &streamState.Metadata.Controllers[0]
 		streamCid.Family = streamState.Metadata.Family
 	}
-	if err := l.stateDb.UpdateCid(&streamCid); err != nil {
+	if err := cl.stateDb.UpdateCid(&streamCid); err != nil {
 		log.Printf("storeStreamCid: error writing stream=%s, cid=%s to db: %v", streamState.Id, streamState.Log[idx].Cid, err)
 		return err
 	}

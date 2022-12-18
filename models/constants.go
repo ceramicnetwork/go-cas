@@ -3,18 +3,18 @@ package models
 import "time"
 
 const DbDateFormat = "2006-01-02 15:04:05.000000"
-const DbLoadLimit = 250
+const DbLoadLimit = 1000
 
 const MaxBatchProcessingTime = 5 * time.Minute
 
 // Defaults
-const DefaultTick = 10 * time.Second
+const DefaultTick = 1 * time.Second
 const DefaultHttpWaitTime = 10 * time.Second
 
 // TaskQueue/BatchExecutor
-const TaskQueueMaxWorkers = 32
-const TaskQueueMaxQueueDepth = 100
-const BatchMaxDepth = 25
+const TaskQueueMaxWorkers = 8
+const TaskQueueMaxQueueDepth = 8
+const BatchMaxDepth = 10
 const BatchMaxLinger = 10 * time.Second
 
 type CommitType uint8
