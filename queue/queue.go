@@ -66,7 +66,6 @@ func NewQueue[T Queueable[T]](cfg aws.Config, name string) *Queue[T] {
 		QueueOwnerAWSAccountId: aws.String(os.Getenv("ACCOUNT_ID")),
 	}
 	getUrlOut, err := client.GetQueueUrl(ctx, &getUrlIn)
-	// TODO: Create queue if it doesn't exist
 	if err != nil {
 		log.Fatalf("newQueue: failed to retrieve %s queue url: %v", name, err)
 	}

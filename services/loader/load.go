@@ -15,8 +15,6 @@ import (
 	"github.com/smrz2001/go-cas/services/loader/ceramic"
 )
 
-// TODO: Asbtract pattern for "Service"? Going to need the state DB and ingress/egress (SQS) queues for the loading,
-// batching, and failure handling services.
 type CeramicLoader struct {
 	cidLoader *ceramic.CidLoader
 	stateDb   *db.StateDatabase
@@ -46,10 +44,10 @@ func NewCeramicLoader() *CeramicLoader {
 
 func (l CeramicLoader) Load() {
 	for {
-		// TODO: Use go-sqs to scale up/down
 		if anchorReqs, err := l.requestQ.Dequeue(); err != nil {
 			log.Printf("load: error polling batch from request queue: %v", err)
 		} else if len(anchorReqs) > 0 {
+			// TODO: This is where go-sqs can be used for handling multiple batches in parallel
 			// This call will block until it's done
 			l.processBatch(anchorReqs)
 		}

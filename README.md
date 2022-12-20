@@ -14,21 +14,20 @@ https://lucid.app/documents/view/9fb65517-add6-48f5-a35b-e8c5835a9762
 
 ### Major
 
-- [ ] Implement batcher running cache
-- [ ] Implement `Worker` and `Failure` queues
-- [ ] Implement failure handler <- _should_ fail requests in Postgres, for now, can just fail them in DynamoDB. There could be other failures to so will need to handle them here.
-- [ ] DLQ?
-- [ ] Use [go-sqs](https://github.com/ABevier/go-sqs) for more sophisticated/systematic SQS processing/scaling
-- [ ] Add DynamoDB table creation (see code in [pipeline-tools](https://github.com/3box/pipeline-tools/blob/develop/cd/manager/aws/dynamoDb.go#L62))
-- [ ] CI/CD
+- [ ] Implement batching service (with in-memory batch cache): `Ready` queue -> `Worker` / `Failure` queue
+- [ ] Implement failure handling service: `Failure` queue -> ?
+- [ ] Use [go-sqs](https://github.com/ABevier/go-sqs) for scaling up SQS processing
+- [ ] Abstract pattern for "Service" - going to need state DB + ingress/egress queues for 3 services
+- [ ] Implement [dead-letter queue (DLQ)](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
 - [ ] Unit tests (backward compatibility tests?)
 - [ ] Performance tests
 - [ ] Metrics
 
 ### Minor
 
-- [ ] ?
+- [ ] CI/CD
 
 ### Starter
 
-- [ ] ?
+- [ ] Create SQS queue if it doesn't exist
+- [ ] Create DynamoDB table if it doesn't exist (see [pipeline-tools](https://github.com/3box/pipeline-tools/blob/develop/cd/manager/aws/dynamoDb.go#L62))
