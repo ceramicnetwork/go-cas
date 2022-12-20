@@ -73,24 +73,24 @@ func (p RequestPoller) enqueueRequests(anchorReqs []*messages.AnchorRequest) (ti
 	ctx, cancel := context.WithTimeout(context.Background(), PollMaxProcessingTime)
 	defer cancel()
 
-	type qFuture struct {
-		r *messages.AnchorRequest
-		f *futures.Future[string]
-	}
-	qfs := make([]qFuture, len(anchorReqs))
+	qfs := make([]*futures.Future[string], len(anchorReqs))
 	for idx, anchorReq := range anchorReqs {
-		qfs[idx] = qFuture{anchorReq, p.requestQ.EnqueueF(anchorReq)}
+		qfs[idx] = p.requestQ.EnqueueF(anchorReq)
 	}
 	checkpoint := time.Time{}
-	for _, qf := range qfs {
-		if _, err := qf.f.Get(ctx); err != nil {
-			log.Printf("enqueueRequests: failed to process request: %v, %v", qf.r, err)
+	for idx, qf := range qfs {
+		// TODO: Retry with exponential backoff. Would be nice to make sure a particular batch gets enqueued because
+		// otherwise we could have a bunch of duplicated messages if one future fails while others down the line have
+		// passed.
+		if _, err := qf.Get(ctx); err != nil {
+			log.Printf("enqueueRequests: failed to process request: %v, %v", anchorReqs[idx], err)
 			// If there's an error, return so that this entry is reprocessed. SQS deduplication will likely take care of
 			// any duplicate messages, though if there is a tiny number of duplicates that makes it through, that's ok.
 			// It's better to anchor some requests more than once than to not anchor some at all.
-			return time.Time{}, err
+			return checkpoint, err
 		}
-		checkpoint = qf.r.CreatedAt
+		// Updated the checkpoint to the last entry we were able to enqueue successfully
+		checkpoint = anchorReqs[idx].CreatedAt
 	}
 	return checkpoint, nil
 }

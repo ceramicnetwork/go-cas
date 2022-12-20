@@ -3,7 +3,7 @@ module github.com/smrz2001/go-cas
 go 1.18
 
 require (
-	github.com/abevier/tsk v0.0.0-20221219225852-24e5c529c5f7
+	github.com/abevier/tsk v0.0.0-20221220212300-0be0a4ca1e14
 	github.com/aws/aws-sdk-go-v2 v1.17.2
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.10.7
@@ -44,5 +44,6 @@ require (
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
 	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/text v0.3.8 // indirect
+	golang.org/x/time v0.3.0 // indirect
 	lukechampine.com/blake3 v1.1.6 // indirect
 )

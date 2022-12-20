@@ -7,22 +7,22 @@ import (
 
 	"github.com/abevier/tsk/batch"
 	"github.com/abevier/tsk/futures"
+	"github.com/abevier/tsk/ratelimiter"
 	"github.com/abevier/tsk/results"
-	"github.com/abevier/tsk/taskqueue"
 
 	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 )
 
-// TODO: Add a separate BE/TQ for missing CID queries so that we can queue them WHILE still processing regular stream queries
 type CidLoader struct {
 	client        *CeramicClient
 	stateDb       *db.StateDatabase
 	batchExecutor *batch.BatchExecutor[*CidQuery, CidQueryResult]
-	taskQ         *taskqueue.TaskQueue[[]*CidQuery, []results.Result[CidQueryResult]]
+	rateLimiter   *ratelimiter.RateLimiter[[]*CidQuery, []results.Result[CidQueryResult]]
 }
 
+// TODO: Initialize with server context and use that for batch executor
 func NewCidLoader() *CidLoader {
 	cfg, err := cas.AwsConfig()
 	if err != nil {
@@ -32,28 +32,23 @@ func NewCidLoader() *CidLoader {
 		client:  NewCeramicClient(),
 		stateDb: db.NewStateDb(cfg),
 	}
-	// Stream query task queue
-	tqOpts := taskqueue.TaskQueueOpts{
-		MaxWorkers:        models.TaskQueueMaxWorkers,
-		MaxQueueDepth:     models.TaskQueueMaxQueueDepth,
-		FullQueueStrategy: taskqueue.BlockWhenFull,
-	}
-	// Missing CID multiquery batch executor
 	beOpts := batch.BatchOpts{
-		MaxSize:   models.BatchMaxDepth,
-		MaxLinger: models.BatchMaxLinger,
+		MaxSize:   models.DefaultBatchMaxDepth,
+		MaxLinger: models.DefaultBatchMaxLinger,
+	}
+	rlOpts := ratelimiter.RateLimiterOpts{
+		Limit:             models.DefaultRateLimit,
+		Burst:             models.DefaultRateLimit,
+		FullQueueStrategy: ratelimiter.BlockWhenFull,
 	}
 	cidLoader.batchExecutor = batch.NewExecutor[*CidQuery, CidQueryResult](beOpts, func(queries []*CidQuery) ([]results.Result[CidQueryResult], error) {
-		// TODO: Can we use a better context?
-		return cidLoader.taskQ.Submit(context.Background(), queries)
+		return cidLoader.rateLimiter.Submit(context.Background(), queries)
 	})
-	cidLoader.taskQ = taskqueue.NewTaskQueue[[]*CidQuery, []results.Result[CidQueryResult]](tqOpts, cidLoader.multiquery)
+	cidLoader.rateLimiter = ratelimiter.New(rlOpts, cidLoader.multiquery)
 	return &cidLoader
 }
 
 func (cl CidLoader) MultiqueryF(query *CidQuery) *futures.Future[CidQueryResult] {
-	// We can assume that if we reached here, we at least found the stream, which means we also have a genesis commit
-	// that we can use.
 	return cl.batchExecutor.SubmitF(query)
 }
 

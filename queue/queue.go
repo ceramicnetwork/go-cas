@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"go/types"
 	"log"
 	"os"
 	"strconv"
@@ -11,12 +12,12 @@ import (
 
 	"github.com/abevier/tsk/batch"
 	"github.com/abevier/tsk/futures"
+	"github.com/abevier/tsk/ratelimiter"
 	"github.com/abevier/tsk/results"
-	"github.com/abevier/tsk/taskqueue"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
 	"github.com/smrz2001/go-cas/models"
 )
@@ -31,13 +32,13 @@ const (
 )
 
 const SqsBatchSize = 10
+const SqsRateLimit = 250 // upto 2500 messages per second
 const SqsVisibilityTimeout = 3 * time.Minute
-const SqsMaxBatchLinger = 5 * time.Second
 
 type QueueMessage[T any] struct {
 	Body              T
 	Attributes        map[string]string
-	MessageAttributes map[string]types.MessageAttributeValue
+	MessageAttributes map[string]sqsTypes.MessageAttributeValue
 	MessageId         *string
 	ReceiptHandle     *string
 }
@@ -49,13 +50,15 @@ type Queueable[T any] interface {
 
 type Queue[T Queueable[T]] struct {
 	client         *sqs.Client
-	sendExecutor   *batch.BatchExecutor[T, string]
-	sendTaskQ      *taskqueue.TaskQueue[[]T, []results.Result[string]]
-	deleteExecutor *batch.BatchExecutor[string, string]
-	deleteTaskQ    *taskqueue.TaskQueue[[]string, []results.Result[string]]
+	txExecutor     *batch.BatchExecutor[T, string]
+	txRateLimiter  *ratelimiter.RateLimiter[[]T, []results.Result[string]]
+	rxRateLimiter  *ratelimiter.RateLimiter[types.Nil, []*QueueMessage[T]]
+	delExecutor    *batch.BatchExecutor[string, string]
+	delRateLimiter *ratelimiter.RateLimiter[[]string, []results.Result[string]]
 	url            string
 }
 
+// TODO: Initialize with server context and use that for batch executors
 func NewQueue[T Queueable[T]](cfg aws.Config, name string) *Queue[T] {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
@@ -75,32 +78,34 @@ func NewQueue[T Queueable[T]](cfg aws.Config, name string) *Queue[T] {
 	}
 	beOpts := batch.BatchOpts{
 		MaxSize:   SqsBatchSize,
-		MaxLinger: SqsMaxBatchLinger,
+		MaxLinger: models.DefaultBatchMaxLinger,
 	}
-	tqOpts := taskqueue.TaskQueueOpts{
-		MaxWorkers:        models.TaskQueueMaxWorkers,
-		MaxQueueDepth:     models.TaskQueueMaxQueueDepth,
-		FullQueueStrategy: taskqueue.BlockWhenFull,
+	rlOpts := ratelimiter.RateLimiterOpts{
+		Limit:             SqsRateLimit,
+		Burst:             SqsRateLimit,
+		FullQueueStrategy: ratelimiter.BlockWhenFull,
 	}
-	// TODO: Can we use better contexts below?
-	// Have each batch executor run function go through a task queue to limit concurrency while processing the batches
-	q.sendExecutor = batch.NewExecutor[T, string](beOpts, func(messages []T) ([]results.Result[string], error) {
-		return q.sendTaskQ.Submit(context.Background(), messages)
+	// Have each batch executor go through a rate limiter to control throughput
+	q.txExecutor = batch.NewExecutor[T, string](beOpts, func(messages []T) ([]results.Result[string], error) {
+		return q.txRateLimiter.Submit(context.Background(), messages)
 	})
-	q.deleteExecutor = batch.NewExecutor[string, string](beOpts, func(receiptHandles []string) ([]results.Result[string], error) {
-		return q.deleteTaskQ.Submit(context.Background(), receiptHandles)
-	})
-	q.sendTaskQ = taskqueue.NewTaskQueue[[]T](tqOpts, func(ctx context.Context, messages []T) ([]results.Result[string], error) {
+	q.txRateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, messages []T) ([]results.Result[string], error) {
 		return q.enqueueBatch(messages)
 	})
-	q.deleteTaskQ = taskqueue.NewTaskQueue[[]string](tqOpts, func(ctx context.Context, receiptHandles []string) ([]results.Result[string], error) {
+	q.rxRateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, _ types.Nil) ([]*QueueMessage[T], error) {
+		return q.dequeueBatch()
+	})
+	q.delExecutor = batch.NewExecutor[string, string](beOpts, func(receiptHandles []string) ([]results.Result[string], error) {
+		return q.delRateLimiter.Submit(context.Background(), receiptHandles)
+	})
+	q.delRateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, receiptHandles []string) ([]results.Result[string], error) {
 		return q.deleteBatch(receiptHandles)
 	})
 	return &q
 }
 
 func (q Queue[T]) EnqueueF(message T) *futures.Future[string] {
-	return q.sendExecutor.SubmitF(message)
+	return q.txExecutor.SubmitF(message)
 }
 
 func (q Queue[T]) Enqueue(ctx context.Context, message T) (string, error) {
@@ -114,14 +119,14 @@ func (q Queue[T]) enqueueBatch(messages []T) ([]results.Result[string], error) {
 	// We need to map back two levels of results, from the batch construction and the batch send.
 	batchResults := make([]results.Result[string], len(messages))
 
-	entries := make([]types.SendMessageBatchRequestEntry, 0, len(messages))
+	entries := make([]sqsTypes.SendMessageBatchRequestEntry, 0, len(messages))
 	for idx, message := range messages {
 		messageBody, err := json.Marshal(message)
 		if err != nil {
 			batchResults[idx] = results.New[string]("", err)
 			continue
 		}
-		entries = append(entries, types.SendMessageBatchRequestEntry{
+		entries = append(entries, sqsTypes.SendMessageBatchRequestEntry{
 			Id:                     aws.String(strconv.Itoa(idx)), // Use the loop index so we can map results back
 			MessageBody:            aws.String(string(messageBody)),
 			MessageDeduplicationId: message.GetMessageDeduplicationId(),
@@ -149,7 +154,15 @@ func (q Queue[T]) enqueueBatch(messages []T) ([]results.Result[string], error) {
 	return batchResults, nil
 }
 
-func (q Queue[T]) Dequeue() ([]*QueueMessage[T], error) {
+func (q Queue[T]) DequeueF() *futures.Future[[]*QueueMessage[T]] {
+	return q.rxRateLimiter.SubmitF(context.Background(), types.Nil{})
+}
+
+func (q Queue[T]) Dequeue(ctx context.Context) ([]*QueueMessage[T], error) {
+	return q.DequeueF().Get(ctx)
+}
+
+func (q Queue[T]) dequeueBatch() ([]*QueueMessage[T], error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
@@ -180,7 +193,7 @@ func (q Queue[T]) Dequeue() ([]*QueueMessage[T], error) {
 }
 
 func (q Queue[T]) DeleteF(receiptHandle string) *futures.Future[string] {
-	return q.deleteExecutor.SubmitF(receiptHandle)
+	return q.delExecutor.SubmitF(receiptHandle)
 }
 
 func (q Queue[T]) Delete(ctx context.Context, receiptHandle string) (string, error) {
@@ -194,9 +207,9 @@ func (q Queue[T]) deleteBatch(receiptHandles []string) ([]results.Result[string]
 	// We need to map back two levels of results, from the batch construction and the batch delete.
 	batchResults := make([]results.Result[string], len(receiptHandles))
 
-	entries := make([]types.DeleteMessageBatchRequestEntry, 0, len(receiptHandles))
+	entries := make([]sqsTypes.DeleteMessageBatchRequestEntry, 0, len(receiptHandles))
 	for idx, rxId := range receiptHandles {
-		entries = append(entries, types.DeleteMessageBatchRequestEntry{
+		entries = append(entries, sqsTypes.DeleteMessageBatchRequestEntry{
 			Id:            aws.String(strconv.Itoa(idx)),
 			ReceiptHandle: aws.String(rxId),
 		})

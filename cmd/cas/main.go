@@ -26,19 +26,18 @@ func main() {
 	// 1. Poll service
 	//  - Poll Postgres for new anchor requests, which avoids changes to the existing CAS API service.
 	//  - Post request to Request queue.
-	//  - Write requests and updated Postgres polling checkpoint to DB.
+	//  - Write polling checkpoint to state DB.
 	//go poller.NewRequestPoller().Poll()
 
 	// 2. Stream loading service
 	//  - Read requests from the Request queue.
-	//  - Send one or more multiqueries to Ceramic with corresponding stream load requests.
-	//  - Wait for multiquery results:
-	//    - Write successful results to DB and post to Ready queue.
-	//    - TODO: Post failures to Failure queue
+	//  - Send one or more multiqueries to Ceramic with stream/CID load requests.
+	//  - Write successful results to DB and post to Ready queue.
+	//  - TODO: Post failures to Failure queue
 	//go loader.NewCeramicLoader().Load()
 
 	// 3. Batching service
-	//  - Read requests from Ready queue and add tips to cache.
+	//  - Read requests from Ready queue and add streams cache.
 	//  - For every request (and on some interval), check:
 	//    - If oldest entry in cache is older than batch expiration time (5 minutes).
 	//    - If number of streams in cache is equal to maximum batch size (1024).

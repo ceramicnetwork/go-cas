@@ -53,13 +53,11 @@ func (c CeramicClient) query(ctx context.Context, streamId string) (*StreamState
 		return nil, err
 	}
 	stream.State.Id = streamId
-	log.Printf("query: success: %+v", stream)
+	log.Printf("query: resp=%+v", stream)
 	return &stream.State, nil
 }
 
 func (c CeramicClient) multiquery(ctx context.Context, queries []*CidQuery) (map[string]*StreamState, error) {
-	log.Printf("multiquery: %+v", queries)
-
 	type streamQuery struct {
 		StreamId string `json:"streamId"`
 	}
@@ -75,10 +73,12 @@ func (c CeramicClient) multiquery(ctx context.Context, queries []*CidQuery) (map
 		log.Printf("error creating multiquery json: %v", err)
 		return nil, err
 	}
+	log.Printf("multiquery: %s", mqBody)
+
 	ctx, cancel := context.WithTimeout(context.Background(), CeramicServerTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/multiqueries?sync=1", bytes.NewBuffer(mqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
 	if err != nil {
 		log.Printf("error creating multiquery request: %v", err)
 		return nil, err
@@ -104,6 +104,6 @@ func (c CeramicClient) multiquery(ctx context.Context, queries []*CidQuery) (map
 		log.Printf("error unmarshaling multiquery response: %v", err)
 		return nil, err
 	}
-	log.Printf("mq response: streams=%d, resp=%+v", len(mqResp), mqResp)
+	log.Printf("multiquery: streams=%d, resp=%+v", len(mqResp), mqResp)
 	return mqResp, nil
 }

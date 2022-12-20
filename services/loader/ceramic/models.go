@@ -39,18 +39,18 @@ type Stream struct {
 
 type CidQuery struct {
 	StreamId   string
-	GenesisCid string
 	Cid        string
-	StreamType models.StreamType
+	GenesisCid *string
+	StreamType *models.StreamType
 }
 
 func (q CidQuery) mqId() string {
 	buf := bytes.Buffer{}
 	mqId := ""
 	// If the genesis CID is present, we're trying to find a missing CID, otherwise we're doing a plain stream query.
-	if len(q.GenesisCid) > 0 {
+	if q.GenesisCid != nil {
 		buf.Write(varint.ToUvarint(206))
-		buf.Write(varint.ToUvarint(uint64(q.StreamType)))
+		buf.Write(varint.ToUvarint(uint64(*q.StreamType)))
 		genesisCid, _ := cid.Parse(q.GenesisCid)
 		commitCid, _ := cid.Parse(q.Cid)
 		buf.Write(genesisCid.Bytes())
