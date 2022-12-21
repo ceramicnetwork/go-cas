@@ -17,7 +17,6 @@ import (
 )
 
 const IdPosIndex = "id-pos-index"
-const IdTypeIndex = "id-ctp-index"
 const FamIdIndex = "fam-id-index"
 
 type StateDatabase struct {

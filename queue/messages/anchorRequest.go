@@ -8,7 +8,7 @@ import (
 )
 
 type AnchorRequest struct {
-	Id        uuid.UUID `json:"reqId"`
+	Id        uuid.UUID `json:"id"`
 	StreamId  string    `json:"streamId"`
 	Cid       string    `json:"cid"`
 	CreatedAt time.Time `json:"ts"`

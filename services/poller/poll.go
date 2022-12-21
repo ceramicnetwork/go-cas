@@ -3,11 +3,13 @@ package poller
 import (
 	"context"
 	"log"
+	"os"
 	"time"
 
 	"github.com/abevier/tsk/futures"
 
-	"github.com/smrz2001/go-cas"
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 	"github.com/smrz2001/go-cas/queue"
@@ -22,14 +24,16 @@ type RequestPoller struct {
 	requestQ *queue.Queue[*messages.AnchorRequest]
 }
 
-func NewRequestPoller() *RequestPoller {
-	anchorDb := db.NewAnchorDb()
-	cfg, err := cas.AwsConfig()
-	if err != nil {
-		log.Fatalf("failed to create aws cfg: %v", err)
+func NewRequestPoller(cfg aws.Config) *RequestPoller {
+	adbOpts := db.AnchorDbOpts{
+		Host:     os.Getenv("PG_HOST"),
+		Port:     os.Getenv("PG_PORT"),
+		User:     os.Getenv("PG_USER"),
+		Password: os.Getenv("PG_PASSWORD"),
+		Name:     os.Getenv("PG_DB"),
 	}
 	return &RequestPoller{
-		anchorDb: anchorDb,
+		anchorDb: db.NewAnchorDb(adbOpts),
 		stateDb:  db.NewStateDb(cfg),
 		requestQ: queue.NewQueue[*messages.AnchorRequest](cfg, string(queue.QueueType_Request)),
 	}
@@ -44,7 +48,7 @@ func (p RequestPoller) Poll() {
 	checkpoint := prevCheckpoint
 
 	for {
-		if anchorReqs, err := p.anchorDb.Poll(checkpoint, models.DbLoadLimit); err != nil {
+		if anchorReqs, err := p.anchorDb.PollRequests(checkpoint, models.DbLoadLimit); err != nil {
 			log.Printf("poll: error loading requests: %v", err)
 		} else if len(anchorReqs) > 0 {
 			nextCheckpoint, err := p.enqueueRequests(anchorReqs)

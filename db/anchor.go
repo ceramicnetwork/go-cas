@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,81 +25,99 @@ const (
 )
 
 type AnchorDatabase struct {
-	host     string
-	port     string
-	user     string
-	password string
-	db       string
+	opts AnchorDbOpts
 }
 
-type anchorRequest struct {
+type AnchorRequest struct {
 	Id        uuid.UUID
 	StreamId  string
 	Cid       string
 	CreatedAt time.Time
-	Status    int
+	Status    RequestStatus
 	Message   string
 	UpdatedAt time.Time
 	Pinned    bool
 }
 
-func NewAnchorDb() *AnchorDatabase {
-	return &AnchorDatabase{
-		host:     os.Getenv("PG_HOST"),
-		port:     os.Getenv("PG_PORT"),
-		user:     os.Getenv("PG_USER"),
-		password: os.Getenv("PG_PASSWORD"),
-		db:       os.Getenv("PG_DB"),
-	}
+type AnchorDbOpts struct {
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Name     string
 }
 
-func (adb AnchorDatabase) Poll(checkpoint time.Time, limit int) ([]*messages.AnchorRequest, error) {
-	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer dbCancel()
+func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
+	return &AnchorDatabase{opts}
+}
 
-	connUrl := fmt.Sprintf("postgres://%s:%s@%s:%s/%s", adb.user, adb.password, adb.host, adb.port, adb.db)
-	conn, err := pgx.Connect(dbCtx, connUrl)
-	if err != nil {
-		log.Printf("anchorDb: error connecting to db: %v", err)
-		return nil, err
-	}
-	defer conn.Close(context.Background())
-
-	rows, err := conn.Query(
-		context.Background(),
+func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*messages.AnchorRequest, error) {
+	anchorRequests, err := adb.Query(
 		"SELECT * FROM request WHERE status = $1 AND created_at > $2 ORDER BY created_at LIMIT $3",
 		RequestStatus_Pending,
 		checkpoint.Format(models.DbDateFormat),
 		limit,
 	)
 	if err != nil {
-		log.Printf("anchorDb: error querying db: %v", err)
+		return nil, err
+	} else if len(anchorRequests) > 0 {
+		anchorReqMsgs := make([]*messages.AnchorRequest, len(anchorRequests))
+		for idx, anchorRequest := range anchorRequests {
+			anchorReqMsgs[idx] = &messages.AnchorRequest{
+				Id:        anchorRequest.Id,
+				StreamId:  anchorRequest.StreamId,
+				Cid:       anchorRequest.Cid,
+				CreatedAt: anchorRequest.CreatedAt,
+			}
+		}
+		return anchorReqMsgs, nil
+	}
+	return nil, nil
+}
+
+func (adb AnchorDatabase) Query(sql string, args ...any) ([]*AnchorRequest, error) {
+	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+	defer dbCancel()
+
+	connUrl := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s",
+		adb.opts.User,
+		adb.opts.Password,
+		adb.opts.Host,
+		adb.opts.Port,
+		adb.opts.Name,
+	)
+	conn, err := pgx.Connect(dbCtx, connUrl)
+	if err != nil {
+		log.Printf("query: error connecting to db: %v", err)
+		return nil, err
+	}
+	defer conn.Close(context.Background())
+
+	rows, err := conn.Query(context.Background(), sql, args...)
+	if err != nil {
+		log.Printf("query: error querying db: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	var anchorReqs []*messages.AnchorRequest
-	anchorReq := anchorRequest{}
+	anchorRequests := make([]*AnchorRequest, 0)
 	for rows.Next() {
+		anchorRequest := new(AnchorRequest)
 		_ = rows.Scan(
-			&anchorReq.Id,
-			&anchorReq.Status,
-			&anchorReq.Cid,
-			&anchorReq.StreamId,
-			&anchorReq.Message,
-			&anchorReq.CreatedAt,
-			&anchorReq.UpdatedAt,
-			&anchorReq.Pinned,
+			&anchorRequest.Id,
+			&anchorRequest.Status,
+			&anchorRequest.Cid,
+			&anchorRequest.StreamId,
+			&anchorRequest.Message,
+			&anchorRequest.CreatedAt,
+			&anchorRequest.UpdatedAt,
+			&anchorRequest.Pinned,
 		)
-		anchorReqs = append(anchorReqs, &messages.AnchorRequest{
-			Id:        anchorReq.Id,
-			StreamId:  anchorReq.StreamId,
-			Cid:       anchorReq.Cid,
-			CreatedAt: anchorReq.CreatedAt,
-		})
+		anchorRequests = append(anchorRequests, anchorRequest)
 	}
-	if len(anchorReqs) > 0 {
-		log.Printf("anchorDb: found %d requests, start=%s, end=%s", len(anchorReqs), anchorReqs[0].CreatedAt, anchorReqs[len(anchorReqs)-1].CreatedAt)
+	if len(anchorRequests) > 0 {
+		log.Printf("query: found %d requests, start=%s, end=%s", len(anchorRequests), anchorRequests[0].CreatedAt, anchorRequests[len(anchorRequests)-1].CreatedAt)
 	}
-	return anchorReqs, nil
+	return anchorRequests, nil
 }

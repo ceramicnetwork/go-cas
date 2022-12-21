@@ -5,8 +5,9 @@ import "time"
 type CheckpointType string
 
 const (
-	CheckpointType_Poll      CheckpointType = "poll"
-	CheckpointType_Migration CheckpointType = "migration"
+	CheckpointType_Poll           CheckpointType = "poll"
+	CheckpointType_MigrationStart CheckpointType = "migration_start"
+	CheckpointType_MigrationEnd   CheckpointType = "migration_end"
 )
 
 type Checkpoint struct {
@@ -17,7 +18,7 @@ type Checkpoint struct {
 type StreamCid struct {
 	StreamId   string      `dynamodbav:"id"`
 	Cid        string      `dynamodbav:"cid"`
-	Timestamp  time.Time   `dynamodbav:"ts,unixtime"`
+	Timestamp  time.Time   `dynamodbav:"ts,unixtime"` // can be used for TTL
 	StreamType *StreamType `dynamodbav:"stp,omitempty"`
 	Controller *string     `dynamodbav:"ctl,omitempty"`
 	Family     *string     `dynamodbav:"fam,omitempty"`

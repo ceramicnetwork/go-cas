@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/smrz2001/go-cas"
+	"github.com/aws/aws-sdk-go-v2/aws"
+
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 	"github.com/smrz2001/go-cas/queue"
@@ -30,11 +31,7 @@ type queryContext struct {
 }
 
 // TODO: Initialize with server context and use that for batch executor
-func NewCeramicLoader() *CeramicLoader {
-	cfg, err := cas.AwsConfig()
-	if err != nil {
-		log.Fatalf("newCeramicLoader: error creating aws cfg: %v", err)
-	}
+func NewCeramicLoader(cfg aws.Config) *CeramicLoader {
 	return &CeramicLoader{
 		ceramic.NewCidLoader(),
 		db.NewStateDb(cfg),
