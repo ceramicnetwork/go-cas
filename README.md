@@ -25,7 +25,7 @@ https://lucid.app/documents/view/9fb65517-add6-48f5-a35b-e8c5835a9762
 
 ### Minor
 
-- [ ] Use rate-limiter
+- [ ] Clarify contexts being used in various spots - operation ctx vs. server ctx
 - [ ] CI/CD
 
 ### Starter

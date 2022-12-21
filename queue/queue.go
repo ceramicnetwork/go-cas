@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"go/types"
 	"log"
 	"os"
 	"strconv"
@@ -17,7 +16,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	sqsTypes "github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
 	"github.com/smrz2001/go-cas/models"
 )
@@ -38,7 +37,7 @@ const SqsVisibilityTimeout = 3 * time.Minute
 type QueueMessage[T any] struct {
 	Body              T
 	Attributes        map[string]string
-	MessageAttributes map[string]sqsTypes.MessageAttributeValue
+	MessageAttributes map[string]types.MessageAttributeValue
 	MessageId         *string
 	ReceiptHandle     *string
 }
@@ -49,13 +48,11 @@ type Queueable[T any] interface {
 }
 
 type Queue[T Queueable[T]] struct {
-	client         *sqs.Client
-	txExecutor     *batch.BatchExecutor[T, string]
-	txRateLimiter  *ratelimiter.RateLimiter[[]T, []results.Result[string]]
-	rxRateLimiter  *ratelimiter.RateLimiter[types.Nil, []*QueueMessage[T]]
-	delExecutor    *batch.BatchExecutor[string, string]
-	delRateLimiter *ratelimiter.RateLimiter[[]string, []results.Result[string]]
-	url            string
+	client        *sqs.Client
+	txExecutor    *batch.BatchExecutor[T, string]
+	txRateLimiter *ratelimiter.RateLimiter[[]T, []results.Result[string]]
+	delExecutor   *batch.BatchExecutor[string, string]
+	url           string
 }
 
 // TODO: Initialize with server context and use that for batch executors
@@ -85,22 +82,11 @@ func NewQueue[T Queueable[T]](cfg aws.Config, name string) *Queue[T] {
 		Burst:             SqsRateLimit,
 		FullQueueStrategy: ratelimiter.BlockWhenFull,
 	}
-	// Have each batch executor go through a rate limiter to control throughput
 	q.txExecutor = batch.NewExecutor[T, string](beOpts, func(messages []T) ([]results.Result[string], error) {
 		return q.txRateLimiter.Submit(context.Background(), messages)
 	})
-	q.txRateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, messages []T) ([]results.Result[string], error) {
-		return q.enqueueBatch(messages)
-	})
-	q.rxRateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, _ types.Nil) ([]*QueueMessage[T], error) {
-		return q.dequeueBatch()
-	})
-	q.delExecutor = batch.NewExecutor[string, string](beOpts, func(receiptHandles []string) ([]results.Result[string], error) {
-		return q.delRateLimiter.Submit(context.Background(), receiptHandles)
-	})
-	q.delRateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, receiptHandles []string) ([]results.Result[string], error) {
-		return q.deleteBatch(receiptHandles)
-	})
+	q.txRateLimiter = ratelimiter.New(rlOpts, q.enqueueBatch)
+	q.delExecutor = batch.NewExecutor[string, string](beOpts, q.deleteBatch)
 	return &q
 }
 
@@ -112,22 +98,22 @@ func (q Queue[T]) Enqueue(ctx context.Context, message T) (string, error) {
 	return q.EnqueueF(message).Get(ctx)
 }
 
-func (q Queue[T]) enqueueBatch(messages []T) ([]results.Result[string], error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
+func (q Queue[T]) enqueueBatch(ctx context.Context, messages []T) ([]results.Result[string], error) {
+	qCtx, qCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer qCancel()
 
 	// We need to map back two levels of results, from the batch construction and the batch send.
 	batchResults := make([]results.Result[string], len(messages))
 
-	entries := make([]sqsTypes.SendMessageBatchRequestEntry, 0, len(messages))
+	entries := make([]types.SendMessageBatchRequestEntry, 0, len(messages))
 	for idx, message := range messages {
 		messageBody, err := json.Marshal(message)
 		if err != nil {
 			batchResults[idx] = results.New[string]("", err)
 			continue
 		}
-		entries = append(entries, sqsTypes.SendMessageBatchRequestEntry{
-			Id:                     aws.String(strconv.Itoa(idx)), // Use the loop index so we can map results back
+		entries = append(entries, types.SendMessageBatchRequestEntry{
+			Id:                     aws.String(strconv.Itoa(idx)), // use the loop index so we can map results back
 			MessageBody:            aws.String(string(messageBody)),
 			MessageDeduplicationId: message.GetMessageDeduplicationId(),
 			MessageGroupId:         message.GetMessageGroupId(),
@@ -137,7 +123,7 @@ func (q Queue[T]) enqueueBatch(messages []T) ([]results.Result[string], error) {
 		Entries:  entries,
 		QueueUrl: aws.String(q.url),
 	}
-	sendMsgBatchOut, err := q.client.SendMessageBatch(ctx, &sendMsgBatchIn)
+	sendMsgBatchOut, err := q.client.SendMessageBatch(qCtx, &sendMsgBatchIn)
 	if err != nil {
 		// Let the batch executor populate the error. We'll lose information about any marshaling errors from above, but
 		// that's ok.
@@ -154,12 +140,12 @@ func (q Queue[T]) enqueueBatch(messages []T) ([]results.Result[string], error) {
 	return batchResults, nil
 }
 
-func (q Queue[T]) DequeueF() *futures.Future[[]*QueueMessage[T]] {
-	return q.rxRateLimiter.SubmitF(context.Background(), types.Nil{})
-}
-
 func (q Queue[T]) Dequeue(ctx context.Context) ([]*QueueMessage[T], error) {
 	return q.DequeueF().Get(ctx)
+}
+
+func (q Queue[T]) DequeueF() *futures.Future[[]*QueueMessage[T]] {
+	return futures.FromFunc(q.dequeueBatch)
 }
 
 func (q Queue[T]) dequeueBatch() ([]*QueueMessage[T], error) {
@@ -207,9 +193,9 @@ func (q Queue[T]) deleteBatch(receiptHandles []string) ([]results.Result[string]
 	// We need to map back two levels of results, from the batch construction and the batch delete.
 	batchResults := make([]results.Result[string], len(receiptHandles))
 
-	entries := make([]sqsTypes.DeleteMessageBatchRequestEntry, 0, len(receiptHandles))
+	entries := make([]types.DeleteMessageBatchRequestEntry, 0, len(receiptHandles))
 	for idx, rxId := range receiptHandles {
-		entries = append(entries, sqsTypes.DeleteMessageBatchRequestEntry{
+		entries = append(entries, types.DeleteMessageBatchRequestEntry{
 			Id:            aws.String(strconv.Itoa(idx)),
 			ReceiptHandle: aws.String(rxId),
 		})
