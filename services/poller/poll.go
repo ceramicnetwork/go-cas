@@ -13,7 +13,6 @@ import (
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 	"github.com/smrz2001/go-cas/queue"
-	"github.com/smrz2001/go-cas/queue/messages"
 )
 
 const PollMaxProcessingTime = 3 * time.Minute
@@ -21,7 +20,7 @@ const PollMaxProcessingTime = 3 * time.Minute
 type RequestPoller struct {
 	anchorDb *db.AnchorDatabase
 	stateDb  *db.StateDatabase
-	requestQ *queue.Queue[*messages.AnchorRequest]
+	requestQ *queue.Queue[*models.AnchorRequest]
 }
 
 func NewRequestPoller(cfg aws.Config) *RequestPoller {
@@ -35,7 +34,7 @@ func NewRequestPoller(cfg aws.Config) *RequestPoller {
 	return &RequestPoller{
 		anchorDb: db.NewAnchorDb(adbOpts),
 		stateDb:  db.NewStateDb(cfg),
-		requestQ: queue.NewQueue[*messages.AnchorRequest](cfg, string(queue.QueueType_Request)),
+		requestQ: queue.NewQueue[*models.AnchorRequest](cfg, string(queue.QueueType_Request)),
 	}
 }
 
@@ -73,7 +72,7 @@ func (p RequestPoller) Poll() {
 	}
 }
 
-func (p RequestPoller) enqueueRequests(anchorReqs []*messages.AnchorRequest) (time.Time, error) {
+func (p RequestPoller) enqueueRequests(anchorReqs []*models.AnchorRequest) (time.Time, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), PollMaxProcessingTime)
 	defer cancel()
 

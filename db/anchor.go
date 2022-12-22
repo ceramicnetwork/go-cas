@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/smrz2001/go-cas/models"
-	"github.com/smrz2001/go-cas/queue/messages"
 )
 
 type RequestStatus uint8
@@ -51,7 +50,7 @@ func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 	return &AnchorDatabase{opts}
 }
 
-func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*messages.AnchorRequest, error) {
+func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*models.AnchorRequest, error) {
 	anchorRequests, err := adb.Query(
 		"SELECT * FROM request WHERE status = $1 AND created_at > $2 ORDER BY created_at LIMIT $3",
 		RequestStatus_Pending,
@@ -61,9 +60,9 @@ func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*mess
 	if err != nil {
 		return nil, err
 	} else if len(anchorRequests) > 0 {
-		anchorReqMsgs := make([]*messages.AnchorRequest, len(anchorRequests))
+		anchorReqMsgs := make([]*models.AnchorRequest, len(anchorRequests))
 		for idx, anchorRequest := range anchorRequests {
-			anchorReqMsgs[idx] = &messages.AnchorRequest{
+			anchorReqMsgs[idx] = &models.AnchorRequest{
 				Id:        anchorRequest.Id,
 				StreamId:  anchorRequest.StreamId,
 				Cid:       anchorRequest.Cid,

@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -21,7 +20,6 @@ import (
 	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
-	"github.com/smrz2001/go-cas/queue/messages"
 )
 
 const defaultMaxAnchorInterval = 12 * time.Hour
@@ -32,7 +30,7 @@ type Migration struct {
 	newAnchorDb    *db.AnchorDatabase
 	stateDb        *db.StateDatabase
 	migrationDb    *MigrationDatabase
-	rateLimiter    *ratelimiter.RateLimiter[*messages.AnchorRequest, *casResponse]
+	rateLimiter    *ratelimiter.RateLimiter[*models.AnchorRequest, *casResponse]
 	casUrl         string
 	anchorInterval time.Duration
 	threeIdStreams []string
@@ -95,9 +93,8 @@ func NewMigration() *Migration {
 		Burst:             models.DefaultRateLimit,
 		FullQueueStrategy: ratelimiter.BlockWhenFull,
 	}
-	m.rateLimiter = ratelimiter.New[*messages.AnchorRequest, *casResponse](rlOpts, m.casRequest)
+	m.rateLimiter = ratelimiter.New[*models.AnchorRequest, *casResponse](rlOpts, m.casRequest)
 	m.threeIdStreams = strings.Split(os.Getenv("3ID_STREAMS"), ",")
-	sort.Strings(m.threeIdStreams)
 	return &m
 }
 
@@ -171,6 +168,15 @@ func (m Migration) checkRequests(checkpoint time.Time) error {
 	}
 }
 
+func (m Migration) is3idStream(streamId string) bool {
+	for _, threeIdStream := range m.threeIdStreams {
+		if streamId == threeIdStream {
+			return true
+		}
+	}
+	return false
+}
+
 // migrateRequests makes new requests for each request in the batch picked up from the old anchor DB
 func (m Migration) migrateRequests(ctx context.Context, checkpoint time.Time) (time.Time, error) {
 	anchorReqs, err := m.oldAnchorDb.PollRequests(checkpoint, models.DbLoadLimit)
@@ -184,9 +190,13 @@ func (m Migration) migrateRequests(ctx context.Context, checkpoint time.Time) (t
 	newCheckpoint := checkpoint
 	for idx, anchorReq := range anchorReqs {
 		// Exclude 3ID streams
-		if sort.SearchStrings(m.threeIdStreams, anchorReq.StreamId) == len(m.threeIdStreams) {
+		if !m.is3idStream(anchorReq.StreamId) {
 			reqFutures[idx] = m.rateLimiter.SubmitF(ctx, anchorReq)
 			newCheckpoint = anchorReq.CreatedAt
+		} else {
+			log.Printf("migrateRequests: skip request for 3ID stream: %v", anchorReq)
+			reqFutures[idx] = futures.New[*casResponse]()
+			reqFutures[idx].Complete(nil)
 		}
 	}
 	var casResp *casResponse
@@ -207,7 +217,7 @@ func (m Migration) migrateRequests(ctx context.Context, checkpoint time.Time) (t
 		// Loop with constant backoff till the DB write succeeds (ignore the error)
 		backoff.Retry(
 			func() error {
-				// TODO: Hack to bypass 400 errors
+				// Check bypasses 400 errors and 3ID streams
 				if casResp != nil {
 					return m.migrationDb.WriteRequest(checkpoint, casResp.Id)
 				}
@@ -235,10 +245,7 @@ func (m Migration) checkRequestStatus(checkpoint time.Time, requestId string) (b
 }
 
 // casRequest makes the actual CAS API request and returns an unmarshalled response
-func (m Migration) casRequest(ctx context.Context, anchorReq *messages.AnchorRequest) (*casResponse, error) {
-	rCtx, rCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
-	defer rCancel()
-
+func (m Migration) casRequest(ctx context.Context, anchorReq *models.AnchorRequest) (*casResponse, error) {
 	log.Printf("casRequest: request=%+v", anchorReq)
 	reqBody, err := json.Marshal(casRequest{
 		anchorReq.StreamId,
@@ -250,7 +257,7 @@ func (m Migration) casRequest(ctx context.Context, anchorReq *messages.AnchorReq
 		// Return the error in the task queue submission result
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(rCtx, "POST", m.casUrl+"/api/v0/requests", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", m.casUrl+"/api/v0/requests", bytes.NewBuffer(reqBody))
 	if err != nil {
 		log.Printf("casRequest: error creating anchor request: %v", err)
 		return nil, err

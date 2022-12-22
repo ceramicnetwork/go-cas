@@ -1,4 +1,4 @@
-package messages
+package models
 
 import (
 	"fmt"
@@ -21,4 +21,16 @@ func (a AnchorRequest) GetMessageDeduplicationId() *string {
 
 func (a AnchorRequest) GetMessageGroupId() *string {
 	return &a.StreamId
+}
+
+type ReadyRequest struct {
+	StreamId string `json:"streamId"`
+}
+
+func (r ReadyRequest) GetMessageDeduplicationId() *string {
+	return &r.StreamId
+}
+
+func (r ReadyRequest) GetMessageGroupId() *string {
+	return &r.StreamId
 }

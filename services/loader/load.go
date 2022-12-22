@@ -3,7 +3,6 @@ package loader
 import (
 	"context"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -11,17 +10,15 @@ import (
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 	"github.com/smrz2001/go-cas/queue"
-	"github.com/smrz2001/go-cas/queue/messages"
 	"github.com/smrz2001/go-cas/services/loader/ceramic"
 )
 
 type CeramicLoader struct {
 	cidLoader *ceramic.CidLoader
 	stateDb   *db.StateDatabase
-	requestQ  *queue.Queue[*messages.AnchorRequest]
-	readyQ    *queue.Queue[*messages.ReadyRequest]
+	requestQ  *queue.Queue[*models.AnchorRequest]
+	readyQ    *queue.Queue[*models.ReadyRequest]
 	queryCh   chan *queryContext
-	queryWg   *sync.WaitGroup
 }
 
 type queryContext struct {
@@ -35,13 +32,12 @@ func NewCeramicLoader(cfg aws.Config) *CeramicLoader {
 	return &CeramicLoader{
 		ceramic.NewCidLoader(),
 		db.NewStateDb(cfg),
-		queue.NewQueue[*messages.AnchorRequest](cfg, string(queue.QueueType_Request)),
-		queue.NewQueue[*messages.ReadyRequest](cfg, string(queue.QueueType_Ready)),
+		queue.NewQueue[*models.AnchorRequest](cfg, string(queue.QueueType_Request)),
+		queue.NewQueue[*models.ReadyRequest](cfg, string(queue.QueueType_Ready)),
 		// This is intentionally an unbuffered channel. It will be used to fan-out anchor request batches dequeued from
 		// SQS, pass them through a Ceramic multiquery batch executor, which is in turn backed by a rate limiter. SQS
 		// consumption will be controlled and so we should never have an uncontrolled number of records in the channel.
 		make(chan *queryContext),
-		new(sync.WaitGroup),
 	}
 }
 
