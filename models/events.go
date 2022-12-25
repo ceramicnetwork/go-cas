@@ -1,36 +1,24 @@
 package models
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type AnchorRequest struct {
-	Id        uuid.UUID `json:"id"`
-	StreamId  string    `json:"streamId"`
-	Cid       string    `json:"cid"`
-	CreatedAt time.Time `json:"ts"`
+type AnchorRequestEvent struct {
+	Id         uuid.UUID   `json:"rid"`
+	StreamId   string      `json:"sid"`
+	Cid        string      `json:"cid"`
+	CreatedAt  time.Time   `json:"ts"`
+	GenesisCid *string     `json:"gid"`
+	StreamType *StreamType `json:"st"`
 }
 
-func (a AnchorRequest) GetMessageDeduplicationId() *string {
-	dedupId := fmt.Sprintf("%s.%s", a.StreamId, a.Cid)
-	return &dedupId
+type StreamReadyEvent struct {
+	StreamId string `json:"sid"`
 }
 
-func (a AnchorRequest) GetMessageGroupId() *string {
-	return &a.StreamId
-}
-
-type ReadyRequest struct {
-	StreamId string `json:"streamId"`
-}
-
-func (r ReadyRequest) GetMessageDeduplicationId() *string {
-	return &r.StreamId
-}
-
-func (r ReadyRequest) GetMessageGroupId() *string {
-	return &r.StreamId
+type AnchorWorkerEvent struct {
+	StreamIds []string `json:"sids"`
 }

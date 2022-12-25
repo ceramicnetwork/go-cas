@@ -50,7 +50,7 @@ func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 	return &AnchorDatabase{opts}
 }
 
-func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*models.AnchorRequest, error) {
+func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*models.AnchorRequestEvent, error) {
 	anchorRequests, err := adb.Query(
 		"SELECT * FROM request WHERE status = $1 AND created_at > $2 ORDER BY created_at LIMIT $3",
 		RequestStatus_Pending,
@@ -60,9 +60,9 @@ func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*mode
 	if err != nil {
 		return nil, err
 	} else if len(anchorRequests) > 0 {
-		anchorReqMsgs := make([]*models.AnchorRequest, len(anchorRequests))
+		anchorReqMsgs := make([]*models.AnchorRequestEvent, len(anchorRequests))
 		for idx, anchorRequest := range anchorRequests {
-			anchorReqMsgs[idx] = &models.AnchorRequest{
+			anchorReqMsgs[idx] = &models.AnchorRequestEvent{
 				Id:        anchorRequest.Id,
 				StreamId:  anchorRequest.StreamId,
 				Cid:       anchorRequest.Cid,
@@ -115,8 +115,8 @@ func (adb AnchorDatabase) Query(sql string, args ...any) ([]*AnchorRequest, erro
 		)
 		anchorRequests = append(anchorRequests, anchorRequest)
 	}
-	if len(anchorRequests) > 0 {
-		log.Printf("query: found %d requests, start=%s, end=%s", len(anchorRequests), anchorRequests[0].CreatedAt, anchorRequests[len(anchorRequests)-1].CreatedAt)
-	}
+	//if len(anchorRequests) > 0 {
+	//	log.Printf("query: found %d requests, start=%s, end=%s", len(anchorRequests), anchorRequests[0].CreatedAt, anchorRequests[len(anchorRequests)-1].CreatedAt)
+	//}
 	return anchorRequests, nil
 }

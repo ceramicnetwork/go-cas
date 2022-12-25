@@ -1,4 +1,4 @@
-package migration
+package migrate
 
 import (
 	"context"
@@ -12,10 +12,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"github.com/smrz2001/go-cas/aws"
 	"github.com/smrz2001/go-cas/models"
 )
 
-type MigrationDatabase struct {
+type Database struct {
 	client       *dynamodb.Client
 	requestTable string
 }
@@ -26,15 +27,19 @@ type batchRequest struct {
 	Ts         time.Time `dynamodbav:"ts"`
 }
 
-func NewMigrationDb(cfg aws.Config) *MigrationDatabase {
-	return &MigrationDatabase{
+func NewMigrationDb() *Database {
+	cfg, err := cas.AwsConfig()
+	if err != nil {
+		log.Fatalf("migration: failed to create aws cfg: %v", err)
+	}
+	return &Database{
 		dynamodb.NewFromConfig(cfg),
 		"cas-anchor-" + os.Getenv("ENV") + "-request",
 	}
 }
 
 // IterateBatch iterates through all the entries in a particular batch
-func (mdb MigrationDatabase) IterateBatch(checkpoint time.Time, asc bool, iter func(batchRequest) (bool, error)) (bool, error) {
+func (mdb Database) IterateBatch(checkpoint time.Time, asc bool, iter func(batchRequest) (bool, error)) (bool, error) {
 	return mdb.iterateRequests(&dynamodb.QueryInput{
 		TableName:              aws.String(mdb.requestTable),
 		KeyConditionExpression: aws.String("#checkpoint = :checkpoint"),
@@ -48,11 +53,11 @@ func (mdb MigrationDatabase) IterateBatch(checkpoint time.Time, asc bool, iter f
 	}, iter)
 }
 
-func (mdb MigrationDatabase) tsEncode(ts time.Time) *types.AttributeValueMemberN {
+func (mdb Database) tsEncode(ts time.Time) *types.AttributeValueMemberN {
 	return &types.AttributeValueMemberN{Value: strconv.FormatInt(ts.UnixMicro(), 10)}
 }
 
-func (mdb MigrationDatabase) tsDecodeOpts(options *attributevalue.DecoderOptions) {
+func (mdb Database) tsDecodeOpts(options *attributevalue.DecoderOptions) {
 	decodeFn := func(ts string) (time.Time, error) {
 		usec, err := strconv.ParseInt(ts, 10, 64)
 		if err != nil {
@@ -66,7 +71,7 @@ func (mdb MigrationDatabase) tsDecodeOpts(options *attributevalue.DecoderOptions
 	}
 }
 
-func (mdb MigrationDatabase) iterateRequests(queryInput *dynamodb.QueryInput, iter func(batchRequest) (bool, error)) (bool, error) {
+func (mdb Database) iterateRequests(queryInput *dynamodb.QueryInput, iter func(batchRequest) (bool, error)) (bool, error) {
 	p := dynamodb.NewQueryPaginator(mdb.client, queryInput)
 	foundItems := false
 	for p.HasMorePages() {
@@ -100,7 +105,7 @@ func (mdb MigrationDatabase) iterateRequests(queryInput *dynamodb.QueryInput, it
 	return foundItems, nil
 }
 
-func (mdb MigrationDatabase) WriteRequest(checkpoint time.Time, requestId string) error {
+func (mdb Database) WriteRequest(checkpoint time.Time, requestId string) error {
 	attributeValues, err := attributevalue.MarshalMapWithOptions(
 		batchRequest{checkpoint, requestId, time.Now()},
 		func(options *attributevalue.EncoderOptions) {
@@ -125,7 +130,7 @@ func (mdb MigrationDatabase) WriteRequest(checkpoint time.Time, requestId string
 	return nil
 }
 
-func (mdb MigrationDatabase) DeleteRequest(checkpoint time.Time, requestId string) error {
+func (mdb Database) DeleteRequest(checkpoint time.Time, requestId string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 

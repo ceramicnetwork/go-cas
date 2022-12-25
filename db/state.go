@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"errors"
+	aws2 "github.com/smrz2001/go-cas/aws"
 	"log"
 	"os"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/models"
 )
 
@@ -26,15 +26,18 @@ type StateDatabase struct {
 	cursor          int64
 }
 
-func NewStateDb(cfg aws.Config) *StateDatabase {
+func NewStateDb() *StateDatabase {
+	cfg, err := aws2.AwsConfig()
+	if err != nil {
+		log.Fatalf("error creating aws cfg: %v", err)
+	}
 	env := os.Getenv("ENV")
 	// Use override endpoint, if specified, so that we can store jobs locally, while hitting regular AWS endpoints for
 	// other operations. This allows local testing without affecting CD manager instances running in AWS.
 	customEndpoint := os.Getenv("DB_AWS_ENDPOINT")
-	var err error
 	if len(customEndpoint) > 0 {
 		log.Printf("newStateDb: using custom dynamodb aws endpoint: %s", customEndpoint)
-		cfg, err = cas.AwsConfigWithOverride(customEndpoint)
+		cfg, err = aws2.AwsConfigWithOverride(customEndpoint)
 		if err != nil {
 			log.Fatalf("failed to create aws cfg: %v", err)
 		}

@@ -11,17 +11,19 @@ const DefaultHttpWaitTime = 10 * time.Second
 const DefaultBatchMaxDepth = 10
 const DefaultBatchMaxLinger = 10 * time.Second
 const DefaultRateLimit = 10 // per second
+const DefaultQueueDepthLimit = 25
+const DefaultMaxReceivedMessages = 100
+const DefaultMaxNumWorkers = 4
+const DefaultMaxInflightMessages = 100
 
-type CommitType uint8
-
-const (
-	CommitType_Genesis CommitType = iota
-	CommitType_Signed
-	CommitType_Anchor
-)
-
-type StreamType uint8
+type QueueType string
 
 const (
-	StreamType_Tile StreamType = iota
+	QueueType_Request    QueueType = "request"
+	QueueType_Multiquery QueueType = "multiquery"
+	QueueType_Ready      QueueType = "ready"
+	QueueType_Worker     QueueType = "worker"
+	QueueType_Failure    QueueType = "failure"
 )
+
+const SqsVisibilityTimeout = 3 * time.Minute

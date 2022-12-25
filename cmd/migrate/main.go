@@ -1,7 +1,7 @@
 package main
 
-import "github.com/smrz2001/go-cas/services/migration"
+import "github.com/smrz2001/go-cas/services/migrate"
 
 func main() {
-	migration.NewMigration().Migrate()
+	migrate.NewMigrationService().Migrate()
 }

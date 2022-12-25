@@ -1,4 +1,4 @@
-package migration
+package migrate
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"github.com/abevier/tsk/futures"
 	"github.com/abevier/tsk/ratelimiter"
 
-	"github.com/smrz2001/go-cas"
 	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 )
@@ -25,12 +24,12 @@ import (
 const defaultMaxAnchorInterval = 12 * time.Hour
 const defaultBackoffInterval = 2 * time.Second
 
-type Migration struct {
+type MigrationService struct {
 	oldAnchorDb    *db.AnchorDatabase
 	newAnchorDb    *db.AnchorDatabase
 	stateDb        *db.StateDatabase
-	migrationDb    *MigrationDatabase
-	rateLimiter    *ratelimiter.RateLimiter[*models.AnchorRequest, *casResponse]
+	migrationDb    *Database
+	rateLimiter    *ratelimiter.RateLimiter[*models.AnchorRequestEvent, *casResponse]
 	casUrl         string
 	anchorInterval time.Duration
 	threeIdStreams []string
@@ -55,13 +54,9 @@ type casResponse struct {
 	UpdatedAt int64  `json:"-"`
 }
 
-func NewMigration() *Migration {
-	cfg, err := cas.AwsConfig()
-	if err != nil {
-		log.Fatalf("migration: failed to create aws cfg: %v", err)
-	}
+func NewMigrationService() *MigrationService {
 	anchorInterval := defaultMaxAnchorInterval
-	if anchorIntervalEnv, found := os.LookupEnv(os.Getenv("CAS_ANCHOR_INTERVAL")); found {
+	if anchorIntervalEnv, found := os.LookupEnv("CAS_ANCHOR_INTERVAL"); found {
 		if parsedAnchorInterval, err := time.ParseDuration(anchorIntervalEnv); err == nil {
 			anchorInterval = parsedAnchorInterval
 		}
@@ -80,27 +75,28 @@ func NewMigration() *Migration {
 		Password: os.Getenv("NEW_PG_PASSWORD"),
 		Name:     os.Getenv("NEW_PG_DB"),
 	}
-	m := Migration{
+	m := MigrationService{
 		oldAnchorDb:    db.NewAnchorDb(oldAdbOpts),
 		newAnchorDb:    db.NewAnchorDb(newAdbOpts),
-		stateDb:        db.NewStateDb(cfg),
-		migrationDb:    NewMigrationDb(cfg),
+		stateDb:        db.NewStateDb(),
+		migrationDb:    NewMigrationDb(),
 		casUrl:         os.Getenv("CAS_URL"),
 		anchorInterval: anchorInterval,
 	}
-	rlOpts := ratelimiter.RateLimiterOpts{
+	rlOpts := ratelimiter.Opts{
 		Limit:             models.DefaultRateLimit,
 		Burst:             models.DefaultRateLimit,
+		MaxQueueDepth:     models.DefaultQueueDepthLimit,
 		FullQueueStrategy: ratelimiter.BlockWhenFull,
 	}
-	m.rateLimiter = ratelimiter.New[*models.AnchorRequest, *casResponse](rlOpts, m.casRequest)
+	m.rateLimiter = ratelimiter.New[*models.AnchorRequestEvent, *casResponse](rlOpts, m.casRequest)
 	m.threeIdStreams = strings.Split(os.Getenv("3ID_STREAMS"), ",")
 	return &m
 }
 
 // Migrate pulls requests from the old anchor DB, makes CAS API requests for them, then monitors them for some terminal
 // anchor status. Each of the steps in this flow are blocking and will fail the entire run if there is an error.
-func (m Migration) Migrate() {
+func (m MigrationService) Migrate() {
 	for {
 		// 1. Fetch the start checkpoint for the current batch.
 		startCheckpoint, err := m.stateDb.GetCheckpoint(models.CheckpointType_MigrationStart)
@@ -138,7 +134,7 @@ func (m Migration) Migrate() {
 
 // checkRequests will look for *any* entries being present in the migration DB. This means that their anchor status
 // hasn't been resolved yet. If it's been more than the maximum anchoring interval, we'll fail this run.
-func (m Migration) checkRequests(checkpoint time.Time) error {
+func (m MigrationService) checkRequests(checkpoint time.Time) error {
 	processFn := func(request batchRequest) (bool, error) {
 		// Check status of request in the new anchor DB before checking for the maximum anchor interval. This makes
 		// it possible to run this code after an arbitrary amount of time and not fail, assuming all requests were
@@ -168,7 +164,7 @@ func (m Migration) checkRequests(checkpoint time.Time) error {
 	}
 }
 
-func (m Migration) is3idStream(streamId string) bool {
+func (m MigrationService) is3idStream(streamId string) bool {
 	for _, threeIdStream := range m.threeIdStreams {
 		if streamId == threeIdStream {
 			return true
@@ -178,7 +174,7 @@ func (m Migration) is3idStream(streamId string) bool {
 }
 
 // migrateRequests makes new requests for each request in the batch picked up from the old anchor DB
-func (m Migration) migrateRequests(ctx context.Context, checkpoint time.Time) (time.Time, error) {
+func (m MigrationService) migrateRequests(ctx context.Context, checkpoint time.Time) (time.Time, error) {
 	anchorReqs, err := m.oldAnchorDb.PollRequests(checkpoint, models.DbLoadLimit)
 	if err != nil {
 		return time.Time{}, err
@@ -229,12 +225,13 @@ func (m Migration) migrateRequests(ctx context.Context, checkpoint time.Time) (t
 	return newCheckpoint, nil
 }
 
-func (m Migration) checkRequestStatus(checkpoint time.Time, requestId string) (bool, error) {
+func (m MigrationService) checkRequestStatus(checkpoint time.Time, requestId string) (bool, error) {
 	if anchorRequests, err := m.newAnchorDb.Query("SELECT * FROM request WHERE id = $1", requestId); err != nil {
 		return false, err
 	} else if len(anchorRequests) == 0 {
 		return false, fmt.Errorf("checkRequestStatus: error fetching request=%s", requestId)
 	} else if (anchorRequests[0].Status == db.RequestStatus_Completed) || (anchorRequests[0].Status == db.RequestStatus_Failed) {
+		log.Printf("checkRequestStatus: found finished request id=%s, status=%d", anchorRequests[0].Id, anchorRequests[0].Status)
 		// Delete a resolved anchor request from the migration DB
 		if err = m.migrationDb.DeleteRequest(checkpoint, requestId); err != nil {
 			return false, err
@@ -245,7 +242,7 @@ func (m Migration) checkRequestStatus(checkpoint time.Time, requestId string) (b
 }
 
 // casRequest makes the actual CAS API request and returns an unmarshalled response
-func (m Migration) casRequest(ctx context.Context, anchorReq *models.AnchorRequest) (*casResponse, error) {
+func (m MigrationService) casRequest(ctx context.Context, anchorReq *models.AnchorRequestEvent) (*casResponse, error) {
 	log.Printf("casRequest: request=%+v", anchorReq)
 	reqBody, err := json.Marshal(casRequest{
 		anchorReq.StreamId,

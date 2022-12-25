@@ -15,6 +15,7 @@ type Checkpoint struct {
 	Value string `dynamodbav:"value"`
 }
 
+// TODO: Make names smaller
 type StreamCid struct {
 	StreamId   string      `dynamodbav:"id"`
 	Cid        string      `dynamodbav:"cid"`
