@@ -6,13 +6,12 @@ replace github.com/abevier/go-sqs => ../go-sqs
 
 require (
 	github.com/abevier/go-sqs v0.0.0-20221223191813-19b56a64fc68
-	github.com/abevier/tsk v0.0.0-20221223182204-e65ac799d384
+	github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829
 	github.com/aws/aws-sdk-go-v2 v1.17.3
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.10.7
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.8
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.19.17
-	github.com/cenkalti/backoff/v4 v4.2.0
 	github.com/google/uuid v1.3.0
 	github.com/ipfs/go-cid v0.3.2
 	github.com/jackc/pgx/v5 v5.1.1

@@ -6,19 +6,19 @@ import (
 	"github.com/google/uuid"
 )
 
-type AnchorRequestEvent struct {
+type AnchorRequestMessage struct {
 	Id         uuid.UUID   `json:"rid"`
 	StreamId   string      `json:"sid"`
 	Cid        string      `json:"cid"`
 	CreatedAt  time.Time   `json:"ts"`
-	GenesisCid *string     `json:"gid"`
-	StreamType *StreamType `json:"st"`
+	GenesisCid *string     `json:"gid,omitempty"`
+	StreamType *StreamType `json:"st,omitempty"`
 }
 
-type StreamReadyEvent struct {
+type StreamReadyMessage struct {
 	StreamId string `json:"sid"`
 }
 
-type AnchorWorkerEvent struct {
+type AnchorWorkerMessage struct {
 	StreamIds []string `json:"sids"`
 }

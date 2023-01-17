@@ -10,6 +10,11 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/multiformats/go-multibase"
+	"github.com/multiformats/go-varint"
+
+	"github.com/ipfs/go-cid"
+
 	"github.com/smrz2001/go-cas/models"
 )
 
@@ -21,14 +26,13 @@ func NewCeramicClient() *Client {
 	return &Client{os.Getenv("CERAMIC_URL")}
 }
 
-func (c Client) query(ctx context.Context, streamId string) (*models.StreamState, error) {
+func (c Client) Query(ctx context.Context, streamId string) (*models.StreamState, error) {
 	log.Printf("query: %s", streamId)
 
 	qCtx, qCancel := context.WithTimeout(ctx, models.CeramicTimeout)
 	defer qCancel()
 
 	req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId+"?sync=1", nil)
-	//req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId, nil)
 	if err != nil {
 		log.Printf("query: error creating stream request: %v", err)
 		return nil, err
@@ -59,7 +63,7 @@ func (c Client) query(ctx context.Context, streamId string) (*models.StreamState
 	return &stream.State, nil
 }
 
-func (c Client) multiquery(ctx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
+func (c Client) Multiquery(ctx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
 	type streamQuery struct {
 		StreamId string `json:"streamId"`
 	}
@@ -68,7 +72,7 @@ func (c Client) multiquery(ctx context.Context, queries []*models.CeramicQuery) 
 	}
 	mq := multiquery{make([]*streamQuery, len(queries))}
 	for idx, query := range queries {
-		mq.Queries[idx] = &streamQuery{MultiqueryId(query)}
+		mq.Queries[idx] = &streamQuery{c.MultiqueryId(query)}
 	}
 	mqBody, err := json.Marshal(mq)
 	if err != nil {
@@ -108,4 +112,22 @@ func (c Client) multiquery(ctx context.Context, queries []*models.CeramicQuery) 
 	}
 	log.Printf("multiquery: streams=%d, resp=%+v", len(mqResp), mqResp)
 	return mqResp, nil
+}
+
+func (c Client) MultiqueryId(query *models.CeramicQuery) string {
+	buf := bytes.Buffer{}
+	mqId := ""
+	// If the genesis CID is present, we're trying to find a missing CID, otherwise we're doing a plain stream query.
+	if query.GenesisCid != nil {
+		buf.Write(varint.ToUvarint(206))
+		buf.Write(varint.ToUvarint(uint64(*query.StreamType)))
+		genesisCid, _ := cid.Parse(query.GenesisCid)
+		commitCid, _ := cid.Parse(query.Cid)
+		buf.Write(genesisCid.Bytes())
+		buf.Write(commitCid.Bytes())
+		mqId, _ = multibase.Encode(multibase.Base36, buf.Bytes())
+	} else {
+		mqId = query.StreamId
+	}
+	return mqId
 }

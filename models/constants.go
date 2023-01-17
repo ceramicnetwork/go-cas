@@ -25,5 +25,3 @@ const (
 	QueueType_Worker     QueueType = "worker"
 	QueueType_Failure    QueueType = "failure"
 )
-
-const SqsVisibilityTimeout = 3 * time.Minute

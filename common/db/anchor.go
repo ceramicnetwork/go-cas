@@ -13,26 +13,16 @@ import (
 	"github.com/smrz2001/go-cas/models"
 )
 
-type RequestStatus uint8
-
-const (
-	RequestStatus_Pending RequestStatus = iota
-	RequestStatus_Processing
-	RequestStatus_Completed
-	RequestStatus_Failed
-	RequestStatus_Ready
-)
-
 type AnchorDatabase struct {
 	opts AnchorDbOpts
 }
 
-type AnchorRequest struct {
+type anchorRequest struct {
 	Id        uuid.UUID
 	StreamId  string
 	Cid       string
 	CreatedAt time.Time
-	Status    RequestStatus
+	Status    models.RequestStatus
 	Message   string
 	UpdatedAt time.Time
 	Pinned    bool
@@ -50,23 +40,23 @@ func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 	return &AnchorDatabase{opts}
 }
 
-func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*models.AnchorRequestEvent, error) {
-	anchorRequests, err := adb.Query(
+func (adb *AnchorDatabase) RequestsSinceCheckpoint(checkpoint time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
+	anchorRequests, err := adb.query(
 		"SELECT * FROM request WHERE status = $1 AND created_at > $2 ORDER BY created_at LIMIT $3",
-		RequestStatus_Pending,
+		models.RequestStatus_Pending,
 		checkpoint.Format(models.DbDateFormat),
 		limit,
 	)
 	if err != nil {
 		return nil, err
 	} else if len(anchorRequests) > 0 {
-		anchorReqMsgs := make([]*models.AnchorRequestEvent, len(anchorRequests))
-		for idx, anchorRequest := range anchorRequests {
-			anchorReqMsgs[idx] = &models.AnchorRequestEvent{
-				Id:        anchorRequest.Id,
-				StreamId:  anchorRequest.StreamId,
-				Cid:       anchorRequest.Cid,
-				CreatedAt: anchorRequest.CreatedAt,
+		anchorReqMsgs := make([]*models.AnchorRequestMessage, len(anchorRequests))
+		for idx, anchorReq := range anchorRequests {
+			anchorReqMsgs[idx] = &models.AnchorRequestMessage{
+				Id:        anchorReq.Id,
+				StreamId:  anchorReq.StreamId,
+				Cid:       anchorReq.Cid,
+				CreatedAt: anchorReq.CreatedAt,
 			}
 		}
 		return anchorReqMsgs, nil
@@ -74,7 +64,7 @@ func (adb AnchorDatabase) PollRequests(checkpoint time.Time, limit int) ([]*mode
 	return nil, nil
 }
 
-func (adb AnchorDatabase) Query(sql string, args ...any) ([]*AnchorRequest, error) {
+func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, error) {
 	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer dbCancel()
 
@@ -100,23 +90,20 @@ func (adb AnchorDatabase) Query(sql string, args ...any) ([]*AnchorRequest, erro
 	}
 	defer rows.Close()
 
-	anchorRequests := make([]*AnchorRequest, 0)
+	anchorRequests := make([]*anchorRequest, 0)
 	for rows.Next() {
-		anchorRequest := new(AnchorRequest)
+		anchorReq := new(anchorRequest)
 		_ = rows.Scan(
-			&anchorRequest.Id,
-			&anchorRequest.Status,
-			&anchorRequest.Cid,
-			&anchorRequest.StreamId,
-			&anchorRequest.Message,
-			&anchorRequest.CreatedAt,
-			&anchorRequest.UpdatedAt,
-			&anchorRequest.Pinned,
+			&anchorReq.Id,
+			&anchorReq.Status,
+			&anchorReq.Cid,
+			&anchorReq.StreamId,
+			&anchorReq.Message,
+			&anchorReq.CreatedAt,
+			&anchorReq.UpdatedAt,
+			&anchorReq.Pinned,
 		)
-		anchorRequests = append(anchorRequests, anchorRequest)
+		anchorRequests = append(anchorRequests, anchorReq)
 	}
-	//if len(anchorRequests) > 0 {
-	//	log.Printf("query: found %d requests, start=%s, end=%s", len(anchorRequests), anchorRequests[0].CreatedAt, anchorRequests[len(anchorRequests)-1].CreatedAt)
-	//}
 	return anchorRequests, nil
 }

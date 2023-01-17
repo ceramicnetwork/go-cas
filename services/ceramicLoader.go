@@ -1,4 +1,4 @@
-package ceramic
+package services
 
 import (
 	"context"
@@ -8,19 +8,18 @@ import (
 	"github.com/abevier/tsk/ratelimiter"
 	"github.com/abevier/tsk/results"
 
-	"github.com/smrz2001/go-cas/db"
 	"github.com/smrz2001/go-cas/models"
 )
 
-type Loader struct {
-	client         *Client
-	stateDb        *db.StateDatabase
-	ceramicLimiter *ratelimiter.RateLimiter[*models.CeramicQuery, models.CeramicQueryResult]
-	mqBatcher      *batch.BatchExecutor[*models.CeramicQuery, models.CeramicQueryResult]
+type ceramicLoader struct {
+	client      ceramicClient
+	stateDb     stateRepository
+	rateLimiter *ratelimiter.RateLimiter[*models.CeramicQuery, models.CeramicQueryResult]
+	mqBatcher   *batch.Executor[*models.CeramicQuery, models.CeramicQueryResult]
 }
 
-func NewCeramicLoader() *Loader {
-	ceramicLoader := Loader{client: NewCeramicClient(), stateDb: db.NewStateDb()}
+func NewCeramicLoader(client ceramicClient, stateDb stateRepository) *ceramicLoader {
+	ceramicLoader := ceramicLoader{client: client, stateDb: stateDb}
 	beOpts := batch.Opts{MaxSize: models.DefaultBatchMaxDepth, MaxLinger: models.DefaultBatchMaxLinger}
 	rlOpts := ratelimiter.Opts{
 		Limit:             models.DefaultRateLimit,
@@ -31,7 +30,7 @@ func NewCeramicLoader() *Loader {
 	// Put the rate limiter in front of the batch executor so that the former can be used transparently for both queries
 	// and multiqueries going through Ceramic. Multiqueries will get further paced because of going through the batcher
 	// but that's ok.
-	ceramicLoader.ceramicLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
+	ceramicLoader.rateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
 		// Use the presence or absence of the genesis CID to decide whether to perform a normal Ceramic stream query, or
 		// a Ceramic multiquery for a missing commit.
 		if (query.GenesisCid == nil) || (len(*query.GenesisCid) == 0) {
@@ -46,12 +45,12 @@ func NewCeramicLoader() *Loader {
 	return &ceramicLoader
 }
 
-func (l Loader) Submit(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
-	return l.ceramicLimiter.Submit(ctx, query)
+func (l ceramicLoader) Submit(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
+	return l.rateLimiter.Submit(ctx, query)
 }
 
-func (l Loader) query(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
-	if streamState, err := l.client.query(ctx, query.StreamId); err != nil {
+func (l ceramicLoader) query(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
+	if streamState, err := l.client.Query(ctx, query.StreamId); err != nil {
 		return models.CeramicQueryResult{}, err
 	} else if queryResult, err := l.processStream(streamState, query.Cid); err != nil {
 		return models.CeramicQueryResult{}, err
@@ -60,15 +59,15 @@ func (l Loader) query(ctx context.Context, query *models.CeramicQuery) (models.C
 	}
 }
 
-func (l Loader) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[models.CeramicQueryResult], error) {
+func (l ceramicLoader) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[models.CeramicQueryResult], error) {
 	queryResults := make([]results.Result[models.CeramicQueryResult], len(queries))
-	if mqResp, err := l.client.multiquery(ctx, queries); err != nil {
+	if mqResp, err := l.client.Multiquery(ctx, queries); err != nil {
 		return nil, err
 	} else {
 		// Fan the multiquery results back out
 		for idx, query := range queries {
 			queryResult := models.CeramicQueryResult{}
-			if streamState, found := mqResp[MultiqueryId(query)]; found {
+			if streamState, found := mqResp[l.client.MultiqueryId(query)]; found {
 				streamState.Id = query.StreamId
 				queryResult, err = l.processStream(streamState, query.Cid)
 				if err != nil {
@@ -81,10 +80,10 @@ func (l Loader) multiquery(ctx context.Context, queries []*models.CeramicQuery) 
 	return queryResults, nil
 }
 
-func (l Loader) processStream(streamState *models.StreamState, cid string) (models.CeramicQueryResult, error) {
+func (l ceramicLoader) processStream(streamState *models.StreamState, cid string) (models.CeramicQueryResult, error) {
 	// Get the latest CID for this stream from the state DB
 	pos := -1
-	if latestStreamCid, err := l.stateDb.GetLatestCid(streamState.Id); err != nil {
+	if latestStreamCid, err := l.stateDb.GetStreamTip(streamState.Id); err != nil {
 		return models.CeramicQueryResult{}, err
 	} else if latestStreamCid != nil { // stream has been loaded in the past
 		// Note the position of the latest entry so that we can use it with the loaded stream log
@@ -108,7 +107,7 @@ func (l Loader) processStream(streamState *models.StreamState, cid string) (mode
 	return models.CeramicQueryResult{StreamState: streamState, Anchor: doAnchor, CidFound: cidFound}, nil
 }
 
-func (l Loader) storeStreamCid(streamState *models.StreamState, idx int) error {
+func (l ceramicLoader) storeStreamCid(streamState *models.StreamState, idx int) error {
 	streamCid := models.StreamCid{
 		StreamId:   streamState.Id,
 		Cid:        streamState.Log[idx].Cid,

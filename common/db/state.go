@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"errors"
-	aws2 "github.com/smrz2001/go-cas/aws"
 	"log"
 	"os"
 	"time"
@@ -17,44 +16,27 @@ import (
 )
 
 const IdPosIndex = "id-pos-index"
-const FamIdIndex = "fam-id-index"
 
 type StateDatabase struct {
 	client          *dynamodb.Client
 	streamTable     string
 	checkpointTable string
-	cursor          int64
 }
 
-func NewStateDb() *StateDatabase {
-	cfg, err := aws2.AwsConfig()
-	if err != nil {
-		log.Fatalf("error creating aws cfg: %v", err)
-	}
+func NewStateDb(cfg aws.Config) *StateDatabase {
 	env := os.Getenv("ENV")
-	// Use override endpoint, if specified, so that we can store jobs locally, while hitting regular AWS endpoints for
-	// other operations. This allows local testing without affecting CD manager instances running in AWS.
-	customEndpoint := os.Getenv("DB_AWS_ENDPOINT")
-	if len(customEndpoint) > 0 {
-		log.Printf("newStateDb: using custom dynamodb aws endpoint: %s", customEndpoint)
-		cfg, err = aws2.AwsConfigWithOverride(customEndpoint)
-		if err != nil {
-			log.Fatalf("failed to create aws cfg: %v", err)
-		}
-	}
+
 	tablePfx := "cas-anchor-" + env + "-"
 	streamTable := tablePfx + "stream"
 	checkpointTable := tablePfx + "checkpoint"
-	db := &StateDatabase{
+	return &StateDatabase{
 		dynamodb.NewFromConfig(cfg),
 		streamTable,
 		checkpointTable,
-		0,
 	}
-	return db
 }
 
-func (sdb StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Time, error) {
+func (sdb *StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Time, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
@@ -79,7 +61,7 @@ func (sdb StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Tim
 	return time.Time{}, nil
 }
 
-func (sdb StateDatabase) UpdateCheckpoint(ckptType models.CheckpointType, checkpoint time.Time) (bool, error) {
+func (sdb *StateDatabase) UpdateCheckpoint(ckptType models.CheckpointType, checkpoint time.Time) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
@@ -112,7 +94,7 @@ func (sdb StateDatabase) UpdateCheckpoint(ckptType models.CheckpointType, checkp
 	return true, nil
 }
 
-func (sdb StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error) {
+func (sdb *StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
@@ -137,7 +119,7 @@ func (sdb StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error)
 	return nil, nil
 }
 
-func (sdb StateDatabase) GetLatestCid(streamId string) (*models.StreamCid, error) {
+func (sdb *StateDatabase) GetStreamTip(streamId string) (*models.StreamCid, error) {
 	var latest *models.StreamCid = nil
 	if err := sdb.iterateCids(
 		&dynamodb.QueryInput{
@@ -162,7 +144,7 @@ func (sdb StateDatabase) GetLatestCid(streamId string) (*models.StreamCid, error
 	return latest, nil
 }
 
-func (sdb StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func(*models.StreamCid) bool) error {
+func (sdb *StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func(*models.StreamCid) bool) error {
 	p := dynamodb.NewQueryPaginator(sdb.client, queryInput)
 	for p.HasMorePages() {
 		err := func() error {
@@ -193,7 +175,7 @@ func (sdb StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func(
 	return nil
 }
 
-func (sdb StateDatabase) UpdateCid(streamCid *models.StreamCid) error {
+func (sdb *StateDatabase) UpdateCid(streamCid *models.StreamCid) error {
 	if attributeValues, err := attributevalue.MarshalMapWithOptions(streamCid); err != nil {
 		return err
 	} else {
