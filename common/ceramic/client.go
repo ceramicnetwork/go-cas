@@ -5,13 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/multiformats/go-multibase"
+	"github.com/multiformats/go-varint"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
-
-	"github.com/multiformats/go-multibase"
-	"github.com/multiformats/go-varint"
 
 	"github.com/ipfs/go-cid"
 
@@ -22,17 +20,53 @@ type Client struct {
 	url string
 }
 
-func NewCeramicClient() *Client {
-	return &Client{os.Getenv("CERAMIC_URL")}
+func NewCeramicClient(url string) *Client {
+	return &Client{url}
+}
+
+func (c Client) Pin(ctx context.Context, streamId string) (*models.CeramicPinResult, error) {
+	log.Printf("pin: %s", streamId)
+
+	pCtx, pCancel := context.WithTimeout(ctx, models.CeramicPinTimeout)
+	defer pCancel()
+
+	req, err := http.NewRequestWithContext(pCtx, "POST", c.url+"/api/v0/pins/"+streamId, nil)
+	if err != nil {
+		log.Printf("pin: error creating request: %v", err)
+		return nil, err
+	}
+	req.Header.Add("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		log.Printf("pin: error submitting request: %v", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("pin: error reading response: %v", err)
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("pin: error in response: %v", resp.StatusCode)
+		return nil, errors.New("pin: error in response")
+	}
+	pResp := new(models.CeramicPinResult)
+	if err = json.Unmarshal(respBody, pResp); err != nil {
+		log.Printf("pin: error unmarshaling response: %v", err)
+		return nil, err
+	}
+	log.Printf("pin: resp%+v", *pResp)
+	return pResp, nil
 }
 
 func (c Client) Query(ctx context.Context, streamId string) (*models.StreamState, error) {
 	log.Printf("query: %s", streamId)
 
-	qCtx, qCancel := context.WithTimeout(ctx, models.CeramicTimeout)
+	qCtx, qCancel := context.WithTimeout(ctx, models.CeramicStreamLoadTimeout)
 	defer qCancel()
 
-	req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId+"?sync=1", nil)
+	req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId, nil)
 	if err != nil {
 		log.Printf("query: error creating stream request: %v", err)
 		return nil, err
@@ -63,7 +97,7 @@ func (c Client) Query(ctx context.Context, streamId string) (*models.StreamState
 	return &stream.State, nil
 }
 
-func (c Client) Multiquery(ctx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
+func (c Client) Multiquery(mqCtx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
 	type streamQuery struct {
 		StreamId string `json:"streamId"`
 	}
@@ -76,38 +110,38 @@ func (c Client) Multiquery(ctx context.Context, queries []*models.CeramicQuery) 
 	}
 	mqBody, err := json.Marshal(mq)
 	if err != nil {
-		log.Printf("error creating multiquery json: %v", err)
+		log.Printf("multiquery: error creating request json: %v", err)
 		return nil, err
 	}
 	log.Printf("multiquery: %s", mqBody)
 
-	ctx, cancel := context.WithTimeout(context.Background(), models.CeramicTimeout)
+	mqCtx, cancel := context.WithTimeout(context.Background(), models.CeramicMultiqueryTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.url+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
+	req, err := http.NewRequestWithContext(mqCtx, "POST", c.url+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
 	if err != nil {
-		log.Printf("error creating multiquery request: %v", err)
+		log.Printf("multiquery: error creating request: %v", err)
 		return nil, err
 	}
 	req.Header.Add("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Printf("error submitting multiquery: %v", err)
+		log.Printf("multiquery: error submitting request: %v", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
 	respBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("error reading multiquery response: %v", err)
+		log.Printf("multiquery: error reading response: %v", err)
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("error in multiquery: %v", resp.StatusCode)
+		log.Printf("multiquery: error in response: %v", resp.StatusCode)
 		return nil, errors.New("multiquery: error in response")
 	}
 	mqResp := make(map[string]*models.StreamState)
 	if err = json.Unmarshal(respBody, &mqResp); err != nil {
-		log.Printf("error unmarshaling multiquery response: %v", err)
+		log.Printf("multiquery: error unmarshaling response: %v", err)
 		return nil, err
 	}
 	log.Printf("multiquery: streams=%d, resp=%+v", len(mqResp), mqResp)

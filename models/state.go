@@ -5,9 +5,8 @@ import "time"
 type CheckpointType string
 
 const (
-	CheckpointType_Poll           CheckpointType = "poll"
-	CheckpointType_MigrationStart CheckpointType = "migration_start"
-	CheckpointType_MigrationEnd   CheckpointType = "migration_end"
+	CheckpointType_RequestPoll CheckpointType = "rpoll"
+	CheckpointType_FailurePoll CheckpointType = "fpoll"
 )
 
 type Checkpoint struct {

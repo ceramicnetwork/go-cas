@@ -20,7 +20,7 @@ func NewPublisher(queueType models.QueueType, sqsClient *sqs.Client) *Publisher 
 	return &Publisher{gosqs.NewPublisher(
 		sqsClient,
 		utils.GetQueueUrl(sqsClient, queueType),
-		models.DefaultBatchMaxLinger,
+		models.QueuePublisherMaxLinger,
 	)}
 }
 

@@ -14,12 +14,12 @@ import (
 type ceramicLoader struct {
 	client      ceramicClient
 	stateDb     stateRepository
-	rateLimiter *ratelimiter.RateLimiter[*models.CeramicQuery, models.CeramicQueryResult]
-	mqBatcher   *batch.Executor[*models.CeramicQuery, models.CeramicQueryResult]
+	rateLimiter *ratelimiter.RateLimiter[*models.CeramicQuery, *models.CeramicQueryResult]
+	mqBatcher   *batch.Executor[*models.CeramicQuery, *models.CeramicQueryResult]
 }
 
 func NewCeramicLoader(client ceramicClient, stateDb stateRepository) *ceramicLoader {
-	ceramicLoader := ceramicLoader{client: client, stateDb: stateDb}
+	loader := ceramicLoader{client: client, stateDb: stateDb}
 	beOpts := batch.Opts{MaxSize: models.DefaultBatchMaxDepth, MaxLinger: models.DefaultBatchMaxLinger}
 	rlOpts := ratelimiter.Opts{
 		Limit:             models.DefaultRateLimit,
@@ -30,61 +30,63 @@ func NewCeramicLoader(client ceramicClient, stateDb stateRepository) *ceramicLoa
 	// Put the rate limiter in front of the batch executor so that the former can be used transparently for both queries
 	// and multiqueries going through Ceramic. Multiqueries will get further paced because of going through the batcher
 	// but that's ok.
-	ceramicLoader.rateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
+	loader.rateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, query *models.CeramicQuery) (*models.CeramicQueryResult, error) {
 		// Use the presence or absence of the genesis CID to decide whether to perform a normal Ceramic stream query, or
 		// a Ceramic multiquery for a missing commit.
 		if (query.GenesisCid == nil) || (len(*query.GenesisCid) == 0) {
-			return ceramicLoader.query(ctx, query)
+			return loader.query(ctx, query)
 		}
-		return ceramicLoader.mqBatcher.Submit(ctx, query)
+		return loader.mqBatcher.Submit(ctx, query)
 	})
 	// TODO: Use better context
-	ceramicLoader.mqBatcher = batch.New[*models.CeramicQuery, models.CeramicQueryResult](beOpts, func(queries []*models.CeramicQuery) ([]results.Result[models.CeramicQueryResult], error) {
-		return ceramicLoader.multiquery(context.Background(), queries)
+	loader.mqBatcher = batch.New[*models.CeramicQuery, *models.CeramicQueryResult](beOpts, func(queries []*models.CeramicQuery) ([]results.Result[*models.CeramicQueryResult], error) {
+		return loader.multiquery(context.Background(), queries)
 	})
-	return &ceramicLoader
+	return &loader
 }
 
-func (l ceramicLoader) Submit(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
+func (l ceramicLoader) Query(ctx context.Context, query *models.CeramicQuery) (*models.CeramicQueryResult, error) {
 	return l.rateLimiter.Submit(ctx, query)
 }
 
-func (l ceramicLoader) query(ctx context.Context, query *models.CeramicQuery) (models.CeramicQueryResult, error) {
+func (l ceramicLoader) query(ctx context.Context, query *models.CeramicQuery) (*models.CeramicQueryResult, error) {
 	if streamState, err := l.client.Query(ctx, query.StreamId); err != nil {
-		return models.CeramicQueryResult{}, err
+		return nil, err
 	} else if queryResult, err := l.processStream(streamState, query.Cid); err != nil {
-		return models.CeramicQueryResult{}, err
+		return nil, err
 	} else {
 		return queryResult, nil
 	}
 }
 
-func (l ceramicLoader) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[models.CeramicQueryResult], error) {
-	queryResults := make([]results.Result[models.CeramicQueryResult], len(queries))
+func (l ceramicLoader) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[*models.CeramicQueryResult], error) {
+	queryResults := make([]results.Result[*models.CeramicQueryResult], len(queries))
 	if mqResp, err := l.client.Multiquery(ctx, queries); err != nil {
 		return nil, err
 	} else {
 		// Fan the multiquery results back out
 		for idx, query := range queries {
-			queryResult := models.CeramicQueryResult{}
+			var queryResult *models.CeramicQueryResult
 			if streamState, found := mqResp[l.client.MultiqueryId(query)]; found {
 				streamState.Id = query.StreamId
 				queryResult, err = l.processStream(streamState, query.Cid)
 				if err != nil {
 					return nil, err
 				}
+			} else {
+				queryResult = &models.CeramicQueryResult{}
 			}
-			queryResults[idx] = results.New[models.CeramicQueryResult](queryResult, nil)
+			queryResults[idx] = results.New[*models.CeramicQueryResult](queryResult, nil)
 		}
 	}
 	return queryResults, nil
 }
 
-func (l ceramicLoader) processStream(streamState *models.StreamState, cid string) (models.CeramicQueryResult, error) {
+func (l ceramicLoader) processStream(streamState *models.StreamState, cid string) (*models.CeramicQueryResult, error) {
 	// Get the latest CID for this stream from the state DB
 	pos := -1
 	if latestStreamCid, err := l.stateDb.GetStreamTip(streamState.Id); err != nil {
-		return models.CeramicQueryResult{}, err
+		return nil, err
 	} else if latestStreamCid != nil { // stream has been loaded in the past
 		// Note the position of the latest entry so that we can use it with the loaded stream log
 		pos = *latestStreamCid.Position
@@ -100,11 +102,11 @@ func (l ceramicLoader) processStream(streamState *models.StreamState, cid string
 		// Write all new CIDs to the state DB
 		if idx > pos {
 			if err := l.storeStreamCid(streamState, idx); err != nil {
-				return models.CeramicQueryResult{}, err
+				return nil, err
 			}
 		}
 	}
-	return models.CeramicQueryResult{StreamState: streamState, Anchor: doAnchor, CidFound: cidFound}, nil
+	return &models.CeramicQueryResult{StreamState: streamState, Anchor: doAnchor, CidFound: cidFound}, nil
 }
 
 func (l ceramicLoader) storeStreamCid(streamState *models.StreamState, idx int) error {
@@ -113,7 +115,7 @@ func (l ceramicLoader) storeStreamCid(streamState *models.StreamState, idx int) 
 		Cid:        streamState.Log[idx].Cid,
 		CommitType: &streamState.Log[idx].Type,
 		Position:   &idx,
-		Timestamp:  time.Now(),
+		Timestamp:  time.Now().UTC(),
 	}
 	// Only store metadata in genesis record
 	if idx == 0 {

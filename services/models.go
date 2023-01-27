@@ -4,11 +4,14 @@ import (
 	"context"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/smrz2001/go-cas/models"
 )
 
 type anchorRepository interface {
-	RequestsSinceCheckpoint(checkpoint time.Time, limit int) ([]*models.AnchorRequestMessage, error)
+	GetRequests(models.RequestStatus, time.Time, time.Time, []string, int) ([]*models.AnchorRequestMessage, error)
+	UpdateStatus(uuid.UUID, models.RequestStatus, string) error
 }
 
 type stateRepository interface {
@@ -23,6 +26,7 @@ type queuePublisher interface {
 }
 
 type ceramicClient interface {
+	Pin(context.Context, string) (*models.CeramicPinResult, error)
 	Query(context.Context, string) (*models.StreamState, error)
 	Multiquery(context.Context, []*models.CeramicQuery) (map[string]*models.StreamState, error)
 	MultiqueryId(*models.CeramicQuery) string

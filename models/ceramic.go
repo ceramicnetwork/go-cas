@@ -1,8 +1,14 @@
 package models
 
-import "time"
+import (
+	"time"
 
-const CeramicTimeout = 1 * time.Minute
+	"github.com/google/uuid"
+)
+
+const CeramicStreamLoadTimeout = 10 * time.Second
+const CeramicPinTimeout = 120 * time.Second
+const CeramicMultiqueryTimeout = 70 * time.Second
 
 type CommitType uint8
 
@@ -41,6 +47,7 @@ type Stream struct {
 }
 
 type CeramicQuery struct {
+	Id         uuid.UUID
 	StreamId   string
 	Cid        string
 	GenesisCid *string
@@ -51,4 +58,13 @@ type CeramicQueryResult struct {
 	StreamState *StreamState
 	Anchor      bool
 	CidFound    bool
+}
+
+type CeramicPin struct {
+	StreamId string
+}
+
+type CeramicPinResult struct {
+	StreamId string
+	IsPinned bool
 }

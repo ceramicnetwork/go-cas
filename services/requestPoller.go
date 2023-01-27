@@ -8,47 +8,46 @@ import (
 	"github.com/smrz2001/go-cas/models"
 )
 
-const PollMaxProcessingTime = 3 * time.Minute
-
-type PollingService struct {
+type RequestPoller struct {
 	anchorDb     anchorRepository
 	stateDb      stateRepository
-	reqPublisher queuePublisher
+	pinPublisher queuePublisher
 }
 
-func NewPollingService(anchorDb anchorRepository, stateDb stateRepository, reqPublisher queuePublisher) *PollingService {
-	return &PollingService{
+func NewRequestPoller(anchorDb anchorRepository, stateDb stateRepository, pinPublisher queuePublisher) *RequestPoller {
+	return &RequestPoller{
 		anchorDb:     anchorDb,
 		stateDb:      stateDb,
-		reqPublisher: reqPublisher,
+		pinPublisher: pinPublisher,
 	}
 }
 
-func (p PollingService) Run() {
-	prevCheckpoint, err := p.stateDb.GetCheckpoint(models.CheckpointType_Poll)
-	if err != nil {
-		log.Fatalf("poll: error querying checkpoint: %v", err)
-	}
-	log.Printf("poll: db checkpoint: %s", prevCheckpoint)
-	checkpoint := prevCheckpoint
-
+func (rp RequestPoller) Run() {
+	// Start from the beginning of time
+	newerThan := time.Time{}
 	for {
-		if anchorReqs, err := p.anchorDb.RequestsSinceCheckpoint(checkpoint, models.DbLoadLimit); err != nil {
-			log.Printf("poll: error loading requests: %v", err)
+		if anchorReqs, err := rp.anchorDb.GetRequests(
+			models.RequestStatus_Pending,
+			newerThan,
+			time.Now().UTC(),
+			nil,
+			models.DbLoadLimit,
+		); err != nil {
+			log.Printf("requestpoll: error loading requests: %v", err)
 		} else if len(anchorReqs) > 0 {
-			log.Printf("poll: found %d requests", len(anchorReqs))
-			if nextCheckpoint, err := p.sendRequestMessages(anchorReqs); err != nil {
-				log.Printf("poll: error processing requests: %v", err)
+			log.Printf("requestpoll: found %d requests", len(anchorReqs))
+			if nextCheckpoint, err := rp.sendRequestMessages(anchorReqs); err != nil {
+				log.Printf("requestpoll: error processing requests: %v", err)
 			} else
 			// It's possible the checkpoint was updated even if a particular request in the batch failed to be queued
-			if nextCheckpoint.After(checkpoint) {
-				log.Printf("poll: old=%s, new=%s", checkpoint, nextCheckpoint)
-				if _, err = p.stateDb.UpdateCheckpoint(models.CheckpointType_Poll, nextCheckpoint); err != nil {
-					log.Printf("poll: error updating checkpoint %s: %v", nextCheckpoint, err)
+			if nextCheckpoint.After(newerThan) {
+				log.Printf("requestpoll: old=%s, new=%s", newerThan, nextCheckpoint)
+				if _, err = rp.stateDb.UpdateCheckpoint(models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
+					log.Printf("requestpoll: error updating checkpoint %s: %v", nextCheckpoint, err)
 				} else {
 					// Only update checkpoint in-memory once it's been written to DB. This means that it's possible that
 					// we might reprocess Anchor DB entries, but we can handle this.
-					checkpoint = nextCheckpoint
+					newerThan = nextCheckpoint
 				}
 			}
 		}
@@ -57,22 +56,18 @@ func (p PollingService) Run() {
 	}
 }
 
-func (p PollingService) sendRequestMessages(anchorReqs []*models.AnchorRequestMessage) (time.Time, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), PollMaxProcessingTime)
-	defer cancel()
-
-	checkpoint := time.Time{}
-	for idx, anchorReq := range anchorReqs {
-		log.Printf("poll: %v", anchorReqs[idx])
-		if _, err := p.reqPublisher.SendMessage(ctx, anchorReq); err != nil {
-			log.Printf("poll: failed to send message: %v, %v", anchorReqs[idx], err)
-			// If there's an error, return so that this entry is reprocessed. SQS deduplication will likely take care of
-			// any duplicate messages, though if there is a tiny number of duplicates that makes it through, that's ok.
-			// It's better to anchor some requests more than once than to not anchor some at all.
-			return checkpoint, err
-		}
-		// Updated the checkpoint to the last entry we were able to enqueue successfully
-		checkpoint = anchorReqs[idx].CreatedAt
+func (rp RequestPoller) sendRequestMessages(anchorReqs []*models.AnchorRequestMessage) (time.Time, error) {
+	for _, anchorReq := range anchorReqs {
+		req := anchorReq
+		go func() {
+			if _, err := rp.pinPublisher.SendMessage(context.Background(), req); err != nil {
+				log.Printf("requestpoll: failed to send message: %v, %v", req, err)
+				// If there's an error, ignore it. Pinning is an optimization and not absolutely necessary, so it's ok
+				// if it's skipped for a few streams now and then. These streams will get loaded again eventually once
+				// the request is processed by the loading service (if necessary).
+			}
+		}()
 	}
-	return checkpoint, nil
+	// Just return the timestamp from the last request in the list so that processing keeps moving along
+	return anchorReqs[len(anchorReqs)-1].UpdatedAt, nil
 }

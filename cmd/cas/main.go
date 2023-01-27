@@ -49,55 +49,49 @@ func main() {
 	}
 	stateDb := db.NewStateDb(dbAwsCfg)
 
+	// Flow:
+	// ====
+	// 1. Request polling service:
+	//	- Poll anchor DB for new requests
+	//  - Post requests to Pin queue
+	// 2. Failure polling service:
+	//	- Poll anchor DB for requests FAILED more than 6 hours ago
+	//  - Post requests to the Load queue
+	// 3. Pinning service:
+	//	- Read requests from the Pin queue
+	//  - Send stream pin requests to Ceramic
+	// 4. Loading service:
+	//	- Read requests from the Load queue
+	//  - Send one or more multiqueries to Ceramic with stream/CID load requests
+	//  - Write successful results to anchor DB
+
+	// HTTP clients
+	ceramicClient := ceramic.NewCeramicClient(os.Getenv("CERAMIC_URL"))
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
+	// Queue publishers
+	loadPublisher := queue.NewPublisher(models.QueueType_Load, sqsClient)
+	pinPublisher := queue.NewPublisher(models.QueueType_Pin, sqsClient)
+	statusPublisher := queue.NewPublisher(models.QueueType_Status, sqsClient)
+
+	// Services
+	pinningService := services.NewPinningService(ceramicClient)
+	loadingService := services.NewLoadingService(ceramicClient, loadPublisher, statusPublisher, stateDb)
+	statusService := services.NewStatusService(anchorDb)
+
+	// Start the queue consumers. These consumers will be responsible for scaling event processing up based on load, and
+	// also maintaining backpressure on the queues.
+	queue.NewConsumer(pinPublisher, pinningService.Pin).Start()
+	queue.NewConsumer(loadPublisher, loadingService.Load).Start()
+	queue.NewConsumer(statusPublisher, statusService.Status).Start()
+
+	// Start the polling services last
 	wg := sync.WaitGroup{}
-	// Set this to the number of services being invoked below
-	wg.Add(3)
-
-	// 1. Poll service
-	//  - Poll Postgres for new anchor requests, which avoids changes to the existing CAS API service.
-	//  - Post request to Request queue.
-	//  - Write polling checkpoint to state DB.
-	go services.NewPollingService(
-		anchorDb,
-		stateDb,
-		queue.NewPublisher(models.QueueType_Request, sqsClient),
-	).Run()
-
-	failurePublisher := queue.NewPublisher(models.QueueType_Failure, sqsClient)
-
-	// 2. Stream loading service
-	//  - Read requests from the Request queue.
-	//  - Send one or more multiqueries to Ceramic with stream/CID load requests.
-	//  - Write successful results to DB and post to Ready queue.
-	loadingService := services.NewLoadingService(
-		ceramic.NewCeramicClient(),
-		queue.NewPublisher(models.QueueType_Multiquery, sqsClient),
-		queue.NewPublisher(models.QueueType_Ready, sqsClient),
-		failurePublisher,
-		stateDb,
-	)
-	reqConsumer := queue.NewConsumer(models.QueueType_Request, sqsClient, loadingService.ProcessQuery)
-	mqConsumer := queue.NewConsumer(models.QueueType_Multiquery, sqsClient, loadingService.ProcessQuery)
-	// Start the two queue consumers. These consumers will be responsible for scaling event processing up based on load,
-	// and also maintaining backpressure on the queues.
-	mqConsumer.Start()
-	reqConsumer.Start()
-
-	// 3. Batching service
-	//  - Read requests from Ready queue and add streams cache.
-	//  - For every request (and on some interval), check:
-	//    - If oldest entry in cache is older than batch expiration time (e.g. 5 minutes)
-	//    - If number of streams in cache is equal to maximum batch size (1024)
-	//  - If yes, post job to Worker queue with batch.
-	batchingService := services.NewBatchingService(
-		queue.NewPublisher(models.QueueType_Worker, sqsClient),
-		failurePublisher,
-	)
-	readyConsumer := queue.NewConsumer(models.QueueType_Ready, sqsClient, batchingService.ProcessReady)
-	// Start the Ready queue consumer
-	readyConsumer.Start()
-
+	wg.Add(2)
+	// Poll from the anchor DB and post to the Pin queue for Ceramic to pin the corresponding streams
+	go services.NewRequestPoller(anchorDb, stateDb, pinPublisher).Run()
+	// Poll from the anchor DB and post to the Load queue for Ceramic to re-attempt loading the corresponding streams
+	// and CIDs.
+	go services.NewFailurePoller(anchorDb, stateDb, loadPublisher).Run()
 	wg.Wait()
 }

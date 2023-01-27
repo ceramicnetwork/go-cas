@@ -61,14 +61,14 @@ func (sdb *StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Ti
 	return time.Time{}, nil
 }
 
-func (sdb *StateDatabase) UpdateCheckpoint(ckptType models.CheckpointType, checkpoint time.Time) (bool, error) {
+func (sdb *StateDatabase) UpdateCheckpoint(checkpointType models.CheckpointType, checkpoint time.Time) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 
 	checkpointStr := checkpoint.Format(models.DbDateFormat)
 	updateItemIn := dynamodb.UpdateItemInput{
 		Key: map[string]types.AttributeValue{
-			"name": &types.AttributeValueMemberS{Value: string(ckptType)},
+			"name": &types.AttributeValueMemberS{Value: string(checkpointType)},
 		},
 		TableName:           aws.String(sdb.checkpointTable),
 		ConditionExpression: aws.String(":value > #value"),
