@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/smrz2001/go-cas/services/ceramic"
+	"log"
 
 	"github.com/smrz2001/go-cas/models"
 )
@@ -30,6 +31,8 @@ func (p PinningService) Pin(ctx context.Context, msgBody string) error {
 	pin := &models.CeramicPin{
 		StreamId: anchorReq.StreamId,
 	}
-	p.ceramicPinner.Pin(ctx, pin)
+	if _, err := p.ceramicPinner.Pin(ctx, pin); err != nil {
+		log.Printf("load: error pinning streamid=%s: %v", pin.StreamId, err)
+	}
 	return nil
 }

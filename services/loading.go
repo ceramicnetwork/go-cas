@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/smrz2001/go-cas/services/ceramic"
+	"log"
 
 	"github.com/smrz2001/go-cas/models"
 )
@@ -31,10 +32,8 @@ func NewLoadingService(
 // Load is the Loading service's message handler. It will be invoked for messages received on either the Load or the
 // Multiquery queues. The queue plumbing takes care of scaling the consumers, batching, etc.
 //
-// Returning errors from here will cause the anchor request to not be deleted from the originating queue. This is ok
-// because it's better to reprocess a request and potentially anchor the corresponding stream more than once than to not
-// anchor it at all in case there was some error or a bug in the code that caused the processing failure. Conversely,
-// not returning an error will cause the event to get deleted from the originating queue.
+// We won't return errors from here, which will cause the load request to be deleted from the originating queue. This is
+// ok because we'll re-attempt loading again several times anyway.
 func (l LoadingService) Load(ctx context.Context, msgBody string) error {
 	anchorReq := new(models.AnchorRequestMessage)
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err != nil {
@@ -48,7 +47,8 @@ func (l LoadingService) Load(ctx context.Context, msgBody string) error {
 		StreamType: anchorReq.StreamType,
 	}
 	if queryResult, err := l.ceramicLoader.Query(ctx, query); err != nil {
-		return err
+		log.Printf("load: error loading query=%+v: %v", query, err)
+		return nil
 	} else if queryResult.CidFound {
 		// We found the CID!
 		if _, err = l.statusPublisher.SendMessage(ctx, models.RequestStatusMessage{Id: query.Id, Loaded: true}); err != nil {

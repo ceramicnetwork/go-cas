@@ -23,8 +23,17 @@ func NewFailurePoller(anchorDb models.AnchorRepository, stateDb models.StateRepo
 }
 
 func (fp FailurePoller) Run() {
-	// Start from 2 days ago
+	// Start from the last checkpoint or 2 days ago, whichever is sooner.
+	prevCheckpoint, err := fp.stateDb.GetCheckpoint(models.CheckpointType_FailurePoll)
+	if err != nil {
+		log.Fatalf("requestpoll: error querying checkpoint: %v", err)
+	}
+	log.Printf("requestpoll: start checkpoint: %s", prevCheckpoint)
 	newerThan := time.Now().UTC().Add(-48 * time.Hour)
+	if prevCheckpoint.After(newerThan) {
+		newerThan = prevCheckpoint
+	}
+
 	for {
 		if anchorReqs, err := fp.anchorDb.GetRequests(
 			models.RequestStatus_Failed,
