@@ -23,8 +23,14 @@ func NewRequestPoller(anchorDb anchorRepository, stateDb stateRepository, pinPub
 }
 
 func (rp RequestPoller) Run() {
-	// Start from the beginning of time
-	newerThan := time.Time{}
+	// Start from the last checkpoint
+	prevCheckpoint, err := rp.stateDb.GetCheckpoint(models.CheckpointType_RequestPoll)
+	if err != nil {
+		log.Fatalf("requestpoll: error querying checkpoint: %v", err)
+	}
+	log.Printf("requestpoll: start checkpoint: %s", prevCheckpoint)
+	newerThan := prevCheckpoint
+
 	for {
 		if anchorReqs, err := rp.anchorDb.GetRequests(
 			models.RequestStatus_Pending,
