@@ -2,7 +2,7 @@ module github.com/smrz2001/go-cas
 
 go 1.18
 
-replace github.com/abevier/go-sqs => ../go-sqs
+replace github.com/abevier/go-sqs => github.com/smrz2001/go-sqs v0.0.0-20230129114239-912d83ac68c6
 
 require (
 	github.com/abevier/go-sqs v0.0.0-20221223191813-19b56a64fc68
