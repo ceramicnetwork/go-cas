@@ -1,4 +1,4 @@
-package services
+package polling
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 )
 
 type FailurePoller struct {
-	anchorDb      anchorRepository
-	stateDb       stateRepository
-	loadPublisher queuePublisher
+	anchorDb      models.AnchorRepository
+	stateDb       models.StateRepository
+	loadPublisher models.QueuePublisher
 }
 
-func NewFailurePoller(anchorDb anchorRepository, stateDb stateRepository, reqPublisher queuePublisher) *FailurePoller {
+func NewFailurePoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, reqPublisher models.QueuePublisher) *FailurePoller {
 	return &FailurePoller{
 		anchorDb,
 		stateDb,

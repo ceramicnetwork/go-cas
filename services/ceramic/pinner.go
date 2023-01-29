@@ -1,4 +1,4 @@
-package services
+package ceramic
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"github.com/smrz2001/go-cas/models"
 )
 
-type ceramicPinner struct {
-	client      ceramicClient
+type Pinner struct {
+	client      models.CeramicClient
 	rateLimiter *ratelimiter.RateLimiter[*models.CeramicPin, *models.CeramicPinResult]
 }
 
-func NewCeramicPinner(client ceramicClient) *ceramicPinner {
-	pinner := ceramicPinner{client: client}
+func NewCeramicPinner(client models.CeramicClient) *Pinner {
+	pinner := Pinner{client: client}
 	rlOpts := ratelimiter.Opts{
 		Limit:             models.DefaultRateLimit,
 		Burst:             models.DefaultRateLimit,
@@ -27,6 +27,6 @@ func NewCeramicPinner(client ceramicClient) *ceramicPinner {
 	return &pinner
 }
 
-func (p ceramicPinner) Pin(ctx context.Context, query *models.CeramicPin) (*models.CeramicPinResult, error) {
+func (p Pinner) Pin(ctx context.Context, query *models.CeramicPin) (*models.CeramicPinResult, error) {
 	return p.rateLimiter.Submit(ctx, query)
 }

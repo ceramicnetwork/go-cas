@@ -15,6 +15,7 @@ import (
 	"github.com/smrz2001/go-cas/common/utils"
 	"github.com/smrz2001/go-cas/models"
 	"github.com/smrz2001/go-cas/services"
+	"github.com/smrz2001/go-cas/services/polling"
 )
 
 func main() {
@@ -89,9 +90,9 @@ func main() {
 	wg := sync.WaitGroup{}
 	wg.Add(2)
 	// Poll from the anchor DB and post to the Pin queue for Ceramic to pin the corresponding streams
-	go services.NewRequestPoller(anchorDb, stateDb, pinPublisher).Run()
+	go polling.NewRequestPoller(anchorDb, stateDb, pinPublisher).Run()
 	// Poll from the anchor DB and post to the Load queue for Ceramic to re-attempt loading the corresponding streams
 	// and CIDs.
-	go services.NewFailurePoller(anchorDb, stateDb, loadPublisher).Run()
+	go polling.NewFailurePoller(anchorDb, stateDb, loadPublisher).Run()
 	wg.Wait()
 }

@@ -9,10 +9,10 @@ import (
 )
 
 type StatusService struct {
-	anchorDb anchorRepository
+	anchorDb models.AnchorRepository
 }
 
-func NewStatusService(anchorDb anchorRepository) *StatusService {
+func NewStatusService(anchorDb models.AnchorRepository) *StatusService {
 	return &StatusService{anchorDb}
 }
 

@@ -3,16 +3,17 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"github.com/smrz2001/go-cas/services/ceramic"
 
 	"github.com/smrz2001/go-cas/models"
 )
 
 type PinningService struct {
-	ceramicPinner *ceramicPinner
+	ceramicPinner *ceramic.Pinner
 }
 
-func NewPinningService(client ceramicClient) *PinningService {
-	return &PinningService{NewCeramicPinner(client)}
+func NewPinningService(client models.CeramicClient) *PinningService {
+	return &PinningService{ceramic.NewCeramicPinner(client)}
 }
 
 // Pin is the Loading service's message handler. It will be invoked for messages received on the Pin queue. The queue

@@ -1,4 +1,4 @@
-package services
+package polling
 
 import (
 	"context"
@@ -9,12 +9,12 @@ import (
 )
 
 type RequestPoller struct {
-	anchorDb     anchorRepository
-	stateDb      stateRepository
-	pinPublisher queuePublisher
+	anchorDb     models.AnchorRepository
+	stateDb      models.StateRepository
+	pinPublisher models.QueuePublisher
 }
 
-func NewRequestPoller(anchorDb anchorRepository, stateDb stateRepository, pinPublisher queuePublisher) *RequestPoller {
+func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, pinPublisher models.QueuePublisher) *RequestPoller {
 	return &RequestPoller{
 		anchorDb:     anchorDb,
 		stateDb:      stateDb,

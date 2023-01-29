@@ -3,24 +3,25 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"github.com/smrz2001/go-cas/services/ceramic"
 
 	"github.com/smrz2001/go-cas/models"
 )
 
 type LoadingService struct {
-	ceramicLoader   *ceramicLoader
-	loadPublisher   queuePublisher // The service's own queue to handle multiqueries for CIDs not found normally
-	statusPublisher queuePublisher
-	stateDb         stateRepository
+	ceramicLoader   *ceramic.Loader
+	loadPublisher   models.QueuePublisher // The service's own queue to handle multiqueries for CIDs not found normally
+	statusPublisher models.QueuePublisher
+	stateDb         models.StateRepository
 }
 
 func NewLoadingService(
-	client ceramicClient,
-	loadPublisher, statusPublisher queuePublisher,
-	stateDb stateRepository,
+	client models.CeramicClient,
+	loadPublisher, statusPublisher models.QueuePublisher,
+	stateDb models.StateRepository,
 ) *LoadingService {
 	return &LoadingService{
-		NewCeramicLoader(client, stateDb),
+		ceramic.NewCeramicLoader(client, stateDb),
 		loadPublisher,
 		statusPublisher,
 		stateDb,
