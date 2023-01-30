@@ -5,11 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/multiformats/go-multibase"
-	"github.com/multiformats/go-varint"
 	"io/ioutil"
 	"log"
 	"net/http"
+
+	"github.com/multiformats/go-multibase"
+	"github.com/multiformats/go-varint"
 
 	"github.com/ipfs/go-cid"
 

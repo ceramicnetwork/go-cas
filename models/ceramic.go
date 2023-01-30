@@ -7,8 +7,11 @@ import (
 )
 
 const CeramicStreamLoadTimeout = 10 * time.Second
-const CeramicPinTimeout = 120 * time.Second
 const CeramicMultiqueryTimeout = 70 * time.Second
+
+// CeramicPinTimeout is small because even if the pin request fails, the Ceramic node will asynchronously continue the
+// pin operation. This allows the Pin queue to be drained faster than it fills up.
+const CeramicPinTimeout = 1 * time.Second
 
 type CommitType uint8
 
