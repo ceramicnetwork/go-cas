@@ -44,7 +44,7 @@ type AnchorDbOpts struct {
 func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 	return &AnchorDatabase{
 		opts,
-		regexp.MustCompile(`^Reload attempt #[0-9] times\.$`),
+		regexp.MustCompile(`^Reload failed #(\d+) times\.$`),
 	}
 }
 
@@ -160,10 +160,10 @@ func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatu
 }
 
 func (adb *AnchorDatabase) findAttemptNum(message string) *int {
-	attemptStr := adb.reloadRe.FindString(message)
+	attemptStr := adb.reloadRe.FindAllStringSubmatch(message, 1)
 	var attempt *int = nil
 	if len(attemptStr) > 0 {
-		if att, err := strconv.Atoi(attemptStr); err == nil {
+		if att, err := strconv.Atoi(attemptStr[0][1]); err == nil {
 			attempt = &att
 		}
 	}
