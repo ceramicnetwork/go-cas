@@ -24,8 +24,6 @@ type QueuePublisher interface {
 }
 
 type CeramicClient interface {
-	Pin(context.Context, string) (*CeramicPinResult, error)
-	Query(context.Context, string) (*StreamState, error)
-	Multiquery(context.Context, []*CeramicQuery) (map[string]*StreamState, error)
-	MultiqueryId(*CeramicQuery) string
+	Pin(context.Context, *CeramicPin) error
+	Query(context.Context, *CeramicQuery) (*StreamState, error)
 }

@@ -22,13 +22,15 @@ type AnchorDatabase struct {
 
 type anchorRequest struct {
 	Id        uuid.UUID
-	StreamId  string
-	Cid       string
-	CreatedAt time.Time
 	Status    models.RequestStatus
-	Message   string
-	UpdatedAt time.Time
 	Pinned    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Cid       string
+	StreamId  string
+	Message   string
+	Origin    string
+	Timestamp time.Time
 }
 
 type AnchorDbOpts struct {
@@ -116,6 +118,8 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 			&anchorReq.Cid,
 			&anchorReq.StreamId,
 			&anchorReq.Message,
+			&anchorReq.Origin,
+			&anchorReq.Timestamp,
 		)
 		anchorRequests = append(anchorRequests, anchorReq)
 	}

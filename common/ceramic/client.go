@@ -14,24 +14,105 @@ import (
 
 	"github.com/ipfs/go-cid"
 
+	"github.com/abevier/tsk/batch"
+	"github.com/abevier/tsk/ratelimiter"
+	"github.com/abevier/tsk/results"
+
 	"github.com/smrz2001/go-cas/models"
 )
 
+type innerClient struct {
+	url          string
+	queryLimiter *ratelimiter.RateLimiter[*models.CeramicQuery, *models.StreamState]
+	pinLimiter   *ratelimiter.RateLimiter[*models.CeramicPin, *models.CeramicPinResult]
+	mqBatcher    *batch.Executor[*models.CeramicQuery, *models.StreamState]
+}
+
 type Client struct {
-	url string
+	clients  []innerClient
+	pinCtr   int64
+	queryCtr int64
 }
 
-func NewCeramicClient(url string) *Client {
-	return &Client{url}
+func NewCeramicClient(urls []string) *Client {
+	beOpts := batch.Opts{MaxSize: models.DefaultBatchMaxDepth, MaxLinger: models.DefaultBatchMaxLinger}
+	rlOpts := ratelimiter.Opts{
+		Limit:             models.DefaultRateLimit,
+		Burst:             models.DefaultRateLimit,
+		MaxQueueDepth:     models.DefaultQueueDepthLimit,
+		FullQueueStrategy: ratelimiter.BlockWhenFull,
+	}
+	client := &Client{pinCtr: -1, queryCtr: -1}
+	clients := make([]innerClient, len(urls))
+	queryLimiterGen := func(idx int) *ratelimiter.RateLimiter[*models.CeramicQuery, *models.StreamState] {
+		return ratelimiter.New(rlOpts, func(ctx context.Context, query *models.CeramicQuery) (*models.StreamState, error) {
+			// Use the presence or absence of the genesis CID to decide whether to perform a Ceramic stream query, or a
+			// Ceramic multiquery for a missing commit.
+			if (query.GenesisCid == nil) || (len(*query.GenesisCid) == 0) {
+				return clients[idx].doQuery(ctx, query.StreamId)
+			}
+			return clients[idx].mqBatcher.Submit(ctx, query)
+		})
+	}
+	pinLimiterGen := func(idx int) *ratelimiter.RateLimiter[*models.CeramicPin, *models.CeramicPinResult] {
+		return ratelimiter.New(rlOpts, func(ctx context.Context, pin *models.CeramicPin) (*models.CeramicPinResult, error) {
+			return clients[idx].pinLimiter.Submit(ctx, pin)
+		})
+	}
+	// TODO: Use better context
+	mqBatcherGen := func(idx int) *batch.Executor[*models.CeramicQuery, *models.StreamState] {
+		return batch.New[*models.CeramicQuery, *models.StreamState](beOpts, func(queries []*models.CeramicQuery) ([]results.Result[*models.StreamState], error) {
+			return clients[idx].multiquery(context.Background(), queries)
+		})
+	}
+	for i := 0; i < len(urls); i++ {
+		clients[i] = innerClient{
+			urls[i],
+			queryLimiterGen(i),
+			pinLimiterGen(i),
+			mqBatcherGen(i),
+		}
+	}
+	client.clients = clients
+	return client
 }
 
-func (c Client) Pin(ctx context.Context, streamId string) (*models.CeramicPinResult, error) {
+func (c Client) Query(ctx context.Context, query *models.CeramicQuery) (*models.StreamState, error) {
+	c.queryCtr++
+	return c.clients[c.queryCtr%int64(len(c.clients))].queryLimiter.Submit(ctx, query)
+}
+
+func (c Client) Pin(ctx context.Context, pin *models.CeramicPin) error {
+	c.pinCtr++
+	_, err := c.clients[c.pinCtr%int64(len(c.clients))].pinLimiter.Submit(ctx, pin)
+	return err
+}
+
+func (i innerClient) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[*models.StreamState], error) {
+	queryResults := make([]results.Result[*models.StreamState], len(queries))
+	if mqResp, err := i.doMultiquery(ctx, queries); err != nil {
+		return nil, err
+	} else {
+		// Fan the multiquery results back out
+		for idx, query := range queries {
+			if streamState, found := mqResp[multiqueryId(query)]; found {
+				streamState.Id = query.StreamId
+				queryResults[idx] = results.New[*models.StreamState](streamState, nil)
+			} else {
+				queryResults[idx] = results.New[*models.StreamState](nil, nil)
+			}
+		}
+	}
+	return queryResults, nil
+}
+
+func (i innerClient) doPin(ctx context.Context, streamId string) (*models.CeramicPinResult, error) {
 	log.Printf("pin: %s", streamId)
 
 	pCtx, pCancel := context.WithTimeout(ctx, models.CeramicPinTimeout)
 	defer pCancel()
 
-	req, err := http.NewRequestWithContext(pCtx, "POST", c.url+"/api/v0/pins/"+streamId, nil)
+	req, err := http.NewRequestWithContext(pCtx, "POST", i.url+"/api/v0/pins/"+streamId, nil)
 	if err != nil {
 		log.Printf("pin: error creating request: %v", err)
 		return nil, err
@@ -61,13 +142,13 @@ func (c Client) Pin(ctx context.Context, streamId string) (*models.CeramicPinRes
 	return pResp, nil
 }
 
-func (c Client) Query(ctx context.Context, streamId string) (*models.StreamState, error) {
+func (i innerClient) doQuery(ctx context.Context, streamId string) (*models.StreamState, error) {
 	log.Printf("query: %s", streamId)
 
 	qCtx, qCancel := context.WithTimeout(ctx, models.CeramicStreamLoadTimeout)
 	defer qCancel()
 
-	req, err := http.NewRequestWithContext(qCtx, "GET", c.url+"/api/v0/streams/"+streamId, nil)
+	req, err := http.NewRequestWithContext(qCtx, "GET", i.url+"/api/v0/streams/"+streamId, nil)
 	if err != nil {
 		log.Printf("query: error creating stream request: %v", err)
 		return nil, err
@@ -98,7 +179,7 @@ func (c Client) Query(ctx context.Context, streamId string) (*models.StreamState
 	return &stream.State, nil
 }
 
-func (c Client) Multiquery(mqCtx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
+func (i innerClient) doMultiquery(mqCtx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
 	type streamQuery struct {
 		StreamId string `json:"streamId"`
 	}
@@ -107,7 +188,7 @@ func (c Client) Multiquery(mqCtx context.Context, queries []*models.CeramicQuery
 	}
 	mq := multiquery{make([]*streamQuery, len(queries))}
 	for idx, query := range queries {
-		mq.Queries[idx] = &streamQuery{c.MultiqueryId(query)}
+		mq.Queries[idx] = &streamQuery{multiqueryId(query)}
 	}
 	mqBody, err := json.Marshal(mq)
 	if err != nil {
@@ -119,7 +200,7 @@ func (c Client) Multiquery(mqCtx context.Context, queries []*models.CeramicQuery
 	mqCtx, cancel := context.WithTimeout(context.Background(), models.CeramicMultiqueryTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(mqCtx, "POST", c.url+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
+	req, err := http.NewRequestWithContext(mqCtx, "POST", i.url+"/api/v0/multiqueries", bytes.NewBuffer(mqBody))
 	if err != nil {
 		log.Printf("multiquery: error creating request: %v", err)
 		return nil, err
@@ -149,7 +230,7 @@ func (c Client) Multiquery(mqCtx context.Context, queries []*models.CeramicQuery
 	return mqResp, nil
 }
 
-func (c Client) MultiqueryId(query *models.CeramicQuery) string {
+func multiqueryId(query *models.CeramicQuery) string {
 	buf := bytes.Buffer{}
 	mqId := ""
 	// If the genesis CID is present, we're trying to find a missing CID, otherwise we're doing a plain stream query.

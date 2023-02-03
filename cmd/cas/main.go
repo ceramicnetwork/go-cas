@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/joho/godotenv"
@@ -67,7 +68,7 @@ func main() {
 	//  - Write successful results to anchor DB
 
 	// HTTP clients
-	ceramicClient := ceramic.NewCeramicClient(os.Getenv("CERAMIC_URL"))
+	ceramicClient := ceramic.NewCeramicClient(strings.Split(os.Getenv("CERAMIC_URLS"), ","))
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Queue publishers
