@@ -3,30 +3,17 @@ package ceramic
 import (
 	"context"
 
-	"github.com/abevier/tsk/ratelimiter"
-
 	"github.com/smrz2001/go-cas/models"
 )
 
 type Pinner struct {
-	client      models.CeramicClient
-	rateLimiter *ratelimiter.RateLimiter[*models.CeramicPin, *models.CeramicPinResult]
+	client models.CeramicClient
 }
 
 func NewCeramicPinner(client models.CeramicClient) *Pinner {
-	pinner := Pinner{client: client}
-	rlOpts := ratelimiter.Opts{
-		Limit:             models.DefaultRateLimit,
-		Burst:             models.DefaultRateLimit,
-		MaxQueueDepth:     models.DefaultQueueDepthLimit,
-		FullQueueStrategy: ratelimiter.BlockWhenFull,
-	}
-	pinner.rateLimiter = ratelimiter.New(rlOpts, func(ctx context.Context, pin *models.CeramicPin) (*models.CeramicPinResult, error) {
-		return client.Pin(ctx, pin.StreamId)
-	})
-	return &pinner
+	return &Pinner{client: client}
 }
 
-func (p Pinner) Pin(ctx context.Context, query *models.CeramicPin) (*models.CeramicPinResult, error) {
-	return p.rateLimiter.Submit(ctx, query)
+func (p Pinner) Pin(ctx context.Context, query *models.CeramicPin) error {
+	return p.client.Pin(ctx, query)
 }

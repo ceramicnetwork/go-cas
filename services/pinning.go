@@ -31,8 +31,8 @@ func (p PinningService) Pin(ctx context.Context, msgBody string) error {
 	pin := &models.CeramicPin{
 		StreamId: anchorReq.StreamId,
 	}
-	if _, err := p.ceramicPinner.Pin(ctx, pin); err != nil {
-		log.Printf("load: error pinning streamid=%s: %v", pin.StreamId, err)
+	if err := p.ceramicPinner.Pin(ctx, pin); err != nil {
+		log.Printf("pin: error pinning streamid=%s: %v", pin.StreamId, err)
 	}
 	return nil
 }
