@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/multiformats/go-multibase"
 	"github.com/multiformats/go-varint"
@@ -77,18 +78,18 @@ func NewCeramicClient(urls []string) *Client {
 	return client
 }
 
-func (c Client) Query(ctx context.Context, query *models.CeramicQuery) (*models.StreamState, error) {
-	c.queryCtr++
-	return c.clients[c.queryCtr%int64(len(c.clients))].queryLimiter.Submit(ctx, query)
+func (c *Client) Query(ctx context.Context, query *models.CeramicQuery) (*models.StreamState, error) {
+	ctr := atomic.AddInt64(&c.queryCtr, 1)
+	return c.clients[ctr%int64(len(c.clients))].queryLimiter.Submit(ctx, query)
 }
 
-func (c Client) Pin(ctx context.Context, pin *models.CeramicPin) error {
-	c.pinCtr++
-	_, err := c.clients[c.pinCtr%int64(len(c.clients))].pinLimiter.Submit(ctx, pin)
+func (c *Client) Pin(ctx context.Context, pin *models.CeramicPin) error {
+	ctr := atomic.AddInt64(&c.pinCtr, 1)
+	_, err := c.clients[ctr%int64(len(c.clients))].pinLimiter.Submit(ctx, pin)
 	return err
 }
 
-func (i innerClient) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[*models.StreamState], error) {
+func (i *innerClient) multiquery(ctx context.Context, queries []*models.CeramicQuery) ([]results.Result[*models.StreamState], error) {
 	queryResults := make([]results.Result[*models.StreamState], len(queries))
 	if mqResp, err := i.doMultiquery(ctx, queries); err != nil {
 		return nil, err
@@ -106,7 +107,7 @@ func (i innerClient) multiquery(ctx context.Context, queries []*models.CeramicQu
 	return queryResults, nil
 }
 
-func (i innerClient) doPin(ctx context.Context, streamId string) (*models.CeramicPinResult, error) {
+func (i *innerClient) doPin(ctx context.Context, streamId string) (*models.CeramicPinResult, error) {
 	log.Printf("pin: %s", streamId)
 
 	pCtx, pCancel := context.WithTimeout(ctx, models.CeramicPinTimeout)
@@ -142,7 +143,7 @@ func (i innerClient) doPin(ctx context.Context, streamId string) (*models.Cerami
 	return pResp, nil
 }
 
-func (i innerClient) doQuery(ctx context.Context, streamId string) (*models.StreamState, error) {
+func (i *innerClient) doQuery(ctx context.Context, streamId string) (*models.StreamState, error) {
 	log.Printf("query: %s", streamId)
 
 	qCtx, qCancel := context.WithTimeout(ctx, models.CeramicStreamLoadTimeout)
@@ -179,7 +180,7 @@ func (i innerClient) doQuery(ctx context.Context, streamId string) (*models.Stre
 	return &stream.State, nil
 }
 
-func (i innerClient) doMultiquery(mqCtx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
+func (i *innerClient) doMultiquery(mqCtx context.Context, queries []*models.CeramicQuery) (map[string]*models.StreamState, error) {
 	type streamQuery struct {
 		StreamId string `json:"streamId"`
 	}
