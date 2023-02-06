@@ -2,10 +2,8 @@ module github.com/smrz2001/go-cas
 
 go 1.18
 
-replace github.com/abevier/go-sqs => github.com/smrz2001/go-sqs v0.0.0-20230129114239-912d83ac68c6
-
 require (
-	github.com/abevier/go-sqs v0.0.0-20221223191813-19b56a64fc68
+	github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567
 	github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829
 	github.com/aws/aws-sdk-go-v2 v1.17.3
 	github.com/aws/aws-sdk-go-v2/config v1.18.4

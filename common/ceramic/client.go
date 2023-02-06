@@ -56,7 +56,7 @@ func NewCeramicClient(urls []string) *Client {
 	}
 	pinLimiterGen := func(idx int) *ratelimiter.RateLimiter[*models.CeramicPin, *models.CeramicPinResult] {
 		return ratelimiter.New(rlOpts, func(ctx context.Context, pin *models.CeramicPin) (*models.CeramicPinResult, error) {
-			return clients[idx].pinLimiter.Submit(ctx, pin)
+			return clients[idx].doPin(ctx, pin.StreamId)
 		})
 	}
 	// TODO: Use better context

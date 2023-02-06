@@ -1,3 +1,5 @@
+github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567 h1:RB9HfENQ3tKi9N6D4pb1VXCMtiXPdiD1uBeRAeOz46Y=
+github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567/go.mod h1:ew2k5N7G1kT0WmPna1k48xPdThWhQscv2hrETXt7Hnw=
 github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829 h1:DFeide3v0BCOL+BVJltLiyMDImaeIQ+5LWsEBVmRpOE=
 github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829/go.mod h1:5stFO5XvX4fFShiWpYidc8K6TNGpmOZrVXJjF2Nbhmw=
 github.com/aws/aws-sdk-go-v2 v1.17.2/go.mod h1:uzbQtefpm44goOPmdKyAlXSNcwlRgF3ePWVW6EtJvvw=
@@ -80,8 +82,6 @@ github.com/multiformats/go-varint v0.0.7 h1:sWSGR+f/eu5ABZA2ZpYKBILXTTs9JWpdEM/n
 github.com/multiformats/go-varint v0.0.7/go.mod h1:r8PUYw/fD/SjBCiKOoDlGF6QawOELpZAu9eioSos/OU=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
-github.com/smrz2001/go-sqs v0.0.0-20230129114239-912d83ac68c6 h1:KDth5aylGQP6hdhMloZ+GGbsSbuKdvsNhawJndTefLA=
-github.com/smrz2001/go-sqs v0.0.0-20230129114239-912d83ac68c6/go.mod h1:ew2k5N7G1kT0WmPna1k48xPdThWhQscv2hrETXt7Hnw=
 github.com/spaolacci/murmur3 v1.1.0 h1:7c1g84S4BPRrfL5Xrdp6fOJ206sU9y293DDHaoy0bLI=
 github.com/spaolacci/murmur3 v1.1.0/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
