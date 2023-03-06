@@ -2,9 +2,10 @@ package queue
 
 import (
 	"github.com/abevier/go-sqs/gosqs"
-
-	"github.com/smrz2001/go-cas/models"
 )
+
+const consumerMaxWorkers = 100
+const consumerMaxReceiveMessageRequests = 12
 
 type Consumer struct {
 	consumer *gosqs.SQSConsumer
@@ -12,9 +13,9 @@ type Consumer struct {
 
 func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc) *Consumer {
 	qOpts := gosqs.Opts{
-		MaxReceivedMessages:               models.QueueMaxWorkers * 1.2,
-		MaxWorkers:                        models.QueueMaxWorkers,
-		MaxInflightReceiveMessageRequests: models.QueueMaxReceiveMessageRequests,
+		MaxReceivedMessages:               consumerMaxWorkers * 1.2,
+		MaxWorkers:                        consumerMaxWorkers,
+		MaxInflightReceiveMessageRequests: consumerMaxReceiveMessageRequests,
 	}
 	return &Consumer{gosqs.NewConsumer(qOpts, publisher.publisher, callback)}
 }

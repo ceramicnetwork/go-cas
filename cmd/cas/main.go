@@ -72,9 +72,18 @@ func main() {
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Queue publishers
-	loadPublisher := queue.NewPublisher(models.QueueType_Load, sqsClient)
-	pinPublisher := queue.NewPublisher(models.QueueType_Pin, sqsClient)
-	statusPublisher := queue.NewPublisher(models.QueueType_Status, sqsClient)
+	loadPublisher, err := queue.NewPublisher(models.QueueType_Load, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create load publisher: %v", err)
+	}
+	pinPublisher, err := queue.NewPublisher(models.QueueType_Pin, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create pin publisher: %v", err)
+	}
+	statusPublisher, err := queue.NewPublisher(models.QueueType_Status, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create status publisher: %v", err)
+	}
 
 	// Services
 	pinningService := services.NewPinningService(ceramicClient)

@@ -15,7 +15,9 @@ import (
 	"github.com/smrz2001/go-cas/models"
 )
 
-const IdPosIndex = "id-pos-index"
+const stateTableCreationRetries = 3
+const stateTableCreationWait = 3 * time.Second
+const stateIdPosIndex = "id-pos-index"
 
 type StateDatabase struct {
 	client          *dynamodb.Client
@@ -29,10 +31,134 @@ func NewStateDb(cfg aws.Config) *StateDatabase {
 	tablePfx := "cas-anchor-" + env + "-"
 	streamTable := tablePfx + "stream"
 	checkpointTable := tablePfx + "checkpoint"
-	return &StateDatabase{
-		dynamodb.NewFromConfig(cfg),
+
+	client := dynamodb.NewFromConfig(cfg)
+	sdb := StateDatabase{
+		client,
 		streamTable,
 		checkpointTable,
+	}
+
+	if err := sdb.createCheckpointTable(); err != nil {
+		log.Fatalf("state: checkpoint table creation failed: %v", err)
+	}
+	if err := sdb.createStreamTable(); err != nil {
+		log.Fatalf("state: stream table creation failed: %v", err)
+	}
+
+	return &sdb
+}
+
+func (sdb *StateDatabase) createCheckpointTable() error {
+	createStreamTableInput := dynamodb.CreateTableInput{
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("name"),
+				AttributeType: "S",
+			},
+		},
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("name"),
+				KeyType:       "HASH",
+			},
+		},
+		TableName: aws.String(sdb.checkpointTable),
+		ProvisionedThroughput: &types.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(1),
+			WriteCapacityUnits: aws.Int64(1),
+		},
+	}
+	return sdb.createTable(&createStreamTableInput)
+}
+
+func (sdb *StateDatabase) createStreamTable() error {
+	createStreamTableInput := dynamodb.CreateTableInput{
+		AttributeDefinitions: []types.AttributeDefinition{
+			{
+				AttributeName: aws.String("id"),
+				AttributeType: "S",
+			},
+			{
+				AttributeName: aws.String("cid"),
+				AttributeType: "S",
+			},
+			{
+				AttributeName: aws.String("pos"),
+				AttributeType: "N",
+			},
+		},
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("id"),
+				KeyType:       "HASH",
+			},
+			{
+				AttributeName: aws.String("cid"),
+				KeyType:       "RANGE",
+			},
+		},
+		TableName: aws.String(sdb.streamTable),
+		ProvisionedThroughput: &types.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(1),
+			WriteCapacityUnits: aws.Int64(1),
+		},
+		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
+			{
+				IndexName: aws.String(stateIdPosIndex),
+				KeySchema: []types.KeySchemaElement{
+					{
+						AttributeName: aws.String("id"),
+						KeyType:       "HASH",
+					},
+					{
+						AttributeName: aws.String("pos"),
+						KeyType:       "RANGE",
+					},
+				},
+				Projection: &types.Projection{
+					ProjectionType: types.ProjectionTypeAll,
+				},
+				ProvisionedThroughput: &types.ProvisionedThroughput{
+					ReadCapacityUnits:  aws.Int64(1),
+					WriteCapacityUnits: aws.Int64(1),
+				},
+			},
+		},
+	}
+	return sdb.createTable(&createStreamTableInput)
+}
+
+func (sdb *StateDatabase) createTable(createTableIn *dynamodb.CreateTableInput) error {
+	if exists, err := sdb.tableExists(*createTableIn.TableName); !exists {
+		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+		defer cancel()
+
+		if _, err = sdb.client.CreateTable(ctx, createTableIn); err != nil {
+			log.Printf("state: table creation error: %v", err)
+			return err
+		}
+		var exists bool
+		for i := 0; i < stateTableCreationRetries; i++ {
+			if exists, err = sdb.tableExists(*createTableIn.TableName); exists {
+				return nil
+			}
+			time.Sleep(stateTableCreationWait)
+		}
+		return err
+	}
+	return nil
+}
+
+func (sdb *StateDatabase) tableExists(table string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+	defer cancel()
+
+	if output, err := sdb.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {
+		log.Printf("dynamodb: table does not exist: %v", table)
+		return false, err
+	} else {
+		return output.Table.TableStatus == types.TableStatusActive, nil
 	}
 }
 
@@ -124,7 +250,7 @@ func (sdb *StateDatabase) GetStreamTip(streamId string) (*models.StreamCid, erro
 	if err := sdb.iterateCids(
 		&dynamodb.QueryInput{
 			TableName:              aws.String(sdb.streamTable),
-			IndexName:              aws.String(IdPosIndex),
+			IndexName:              aws.String(stateIdPosIndex),
 			KeyConditionExpression: aws.String("#id = :id"),
 			ExpressionAttributeValues: map[string]types.AttributeValue{
 				":id": &types.AttributeValueMemberS{Value: streamId},

@@ -34,6 +34,4 @@ https://lucid.app/documents/view/9fb65517-add6-48f5-a35b-e8c5835a9762
 
 ### Starter
 
-- [ ] Create SQS queue if it doesn't exist.
-- [ ] Create DynamoDB table if it doesn't exist (see [pipeline-tools](https://github.com/3box/pipeline-tools/blob/develop/cd/manager/aws/dynamoDb.go#L62))
 - [ ] Use DynamoDB un/marshalling for millisecond resolution checkpoints instead of storing date/time strings (see [pipeline-tools](https://github.com/3box/pipeline-tools/blob/develop/cd/manager/aws/dynamoDb.go#L305)

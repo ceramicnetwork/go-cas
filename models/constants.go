@@ -13,11 +13,6 @@ const DefaultBatchMaxLinger = 1 * time.Second
 const DefaultRateLimit = 10 // per second
 const DefaultQueueDepthLimit = 25
 
-// Queue
-const QueueMaxWorkers = 100
-const QueueMaxReceiveMessageRequests = 12
-const QueuePublisherMaxLinger = 250 * time.Millisecond
-
 type QueueType string
 
 const (

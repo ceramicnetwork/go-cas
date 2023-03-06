@@ -1,0 +1,124 @@
+version: '3.4'
+
+services:
+  cas:
+    build:
+      context: .
+      args:
+        ENV_TAG: dev
+    environment:
+      - AWS_ACCOUNT_ID=967314784947
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=.
+      - AWS_SECRET_ACCESS_KEY=.
+      - AWS_ENDPOINT=http://localstack:4566
+      - DB_AWS_ENDPOINT=http://localstack:4566
+      - PG_HOST=http://database
+      - PG_PORT=5432
+      - PG_USER=root
+      - PG_PASSWORD=root
+      - PG_DB=anchor_db
+      - ENV=dev
+    depends_on:
+      - localstack
+      - database
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock'
+    networks:
+      - internal
+
+  cas_api:
+    image: ceramicnetwork/ceramic-anchor-service
+    environment:
+      - NODE_ENV=dev
+      - APP_MODE=server
+      - APP_PORT=8081
+      - USE_SMART_CONTRACT_ANCHORS=true
+      - ANCHOR_CONTROLLER_ENABLED=false
+      - ANCHOR_EXPIRATION_PERIOD=0
+      - ANCHOR_SCHEDULE_EXPRESSION=0/1 * * * ? *
+      - BLOCKCHAIN_CONNECTOR=ethereum
+      - CERAMIC_API_URL=http://host.docker.internal:7007
+      - ETH_GAS_LIMIT=4712388
+      - ETH_GAS_PRICE=100000000000
+      - ETH_NETWORK=goerli
+      - ETH_OVERRIDE_GAS_CONFIG=false
+      - ETH_WALLET_PK=0x16dd0990d19001c50eeea6d32e8fdeef40d3945962caf18c18c3930baa5a6ec9
+      - ETH_CONTRACT_ADDRESS=0x231055A0852D67C7107Ad0d0DFeab60278fE6AdC
+      - IPFS_API_URL=http://ipfs:5011
+      - IPFS_API_TIMEOUT=10000
+      - LOG_LEVEL=debug
+      - LOG_TO_FILES=true
+      - LOG_PATH=/usr/local/var/log
+      - MERKLE_DEPTH_LIMIT=0
+      - DB_NAME=anchor_db
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      - VALIDATE_RECORDS=false
+    depends_on:
+      - ipfs
+      - database
+    ports:
+      - '8081:8081'
+    volumes:
+      - './migrations:/cas/migrations'
+    networks:
+      - internal
+
+  ipfs:
+    image: ceramicnetwork/go-ipfs-daemon:prod
+    ports:
+      - '5011:5011'
+    networks:
+      - internal
+
+  database:
+    image: 'postgres'
+    environment:
+      - POSTGRES_USER=root
+      - POSTGRES_PASSWORD=root
+      - POSTGRES_DB=anchor_db
+    ports:
+      - '5432:5432'
+    networks:
+      - internal
+
+  localstack:
+    image: localstack/localstack:latest
+    container_name: localstack
+    ports:
+      - '4563-4584:4563-4584'
+      - '8055:8080'
+    environment:
+      - SERVICES=rds,sqs,dynamodb
+    networks:
+      - internal
+
+#  ganache:
+#    image: trufflesuite/ganache-cli:latest
+#    ports:
+#      - "8545:8545"
+#    volumes:
+#      - ./data/ganache:/ganache_data
+#    entrypoint:
+#      - node
+#      - /app/ganache-core.docker.cli.js
+#      - --deterministic
+#      - --db=/ganache_data
+#      - --mnemonic
+#      - 'move sense much taxi wave hurry recall stairs thank brother nut woman'
+#      - --networkId
+#      - '5777'
+#      - --hostname
+#      - '0.0.0.0'
+#      - -l
+#      - '80000000'
+#      - --quiet
+#    networks:
+#      - internal
+
+networks:
+  internal:
+    driver: bridge
