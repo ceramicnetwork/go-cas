@@ -3,7 +3,7 @@ package ceramic
 import (
 	"context"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type Pinner struct {

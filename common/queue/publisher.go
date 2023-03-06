@@ -12,7 +12,7 @@ import (
 
 	"github.com/abevier/go-sqs/gosqs"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 const publisherMaxLinger = 250 * time.Millisecond

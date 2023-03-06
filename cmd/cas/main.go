@@ -10,13 +10,13 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
-	"github.com/smrz2001/go-cas/common/ceramic"
-	"github.com/smrz2001/go-cas/common/db"
-	"github.com/smrz2001/go-cas/common/queue"
-	"github.com/smrz2001/go-cas/common/utils"
-	"github.com/smrz2001/go-cas/models"
-	"github.com/smrz2001/go-cas/services"
-	"github.com/smrz2001/go-cas/services/polling"
+	"github.com/ceramicnetwork/go-cas/common/ceramic"
+	"github.com/ceramicnetwork/go-cas/common/db"
+	"github.com/ceramicnetwork/go-cas/common/queue"
+	"github.com/ceramicnetwork/go-cas/common/utils"
+	"github.com/ceramicnetwork/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/services"
+	"github.com/ceramicnetwork/go-cas/services/polling"
 )
 
 func main() {

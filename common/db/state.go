@@ -12,7 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 const stateTableCreationRetries = 3

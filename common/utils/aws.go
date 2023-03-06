@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 func AwsConfigWithOverride(customEndpoint string) (aws.Config, error) {

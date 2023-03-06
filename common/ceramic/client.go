@@ -19,7 +19,7 @@ import (
 	"github.com/abevier/tsk/ratelimiter"
 	"github.com/abevier/tsk/results"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type innerClient struct {

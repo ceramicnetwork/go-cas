@@ -3,10 +3,10 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"github.com/smrz2001/go-cas/services/ceramic"
 	"log"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/services/ceramic"
 )
 
 type PinningService struct {

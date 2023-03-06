@@ -1,4 +1,4 @@
-module github.com/smrz2001/go-cas
+module github.com/ceramicnetwork/go-cas
 
 go 1.18
 

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type Loader struct {

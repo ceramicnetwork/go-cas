@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/smrz2001/go-cas/models"
-	"github.com/smrz2001/go-cas/services/ceramic"
+	"github.com/ceramicnetwork/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/services/ceramic"
 )
 
 type LoadingService struct {
