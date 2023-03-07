@@ -13,7 +13,7 @@ services:
       - AWS_SECRET_ACCESS_KEY=.
       - AWS_ENDPOINT=http://localstack:4566
       - DB_AWS_ENDPOINT=http://localstack:4566
-      - PG_HOST=http://database
+      - PG_HOST=database
       - PG_PORT=5432
       - PG_USER=root
       - PG_PASSWORD=root
@@ -45,7 +45,7 @@ services:
       - ETH_OVERRIDE_GAS_CONFIG=false
       - ETH_WALLET_PK=0x16dd0990d19001c50eeea6d32e8fdeef40d3945962caf18c18c3930baa5a6ec9
       - ETH_CONTRACT_ADDRESS=0x231055A0852D67C7107Ad0d0DFeab60278fE6AdC
-      - IPFS_API_URL=http://ipfs:5011
+      - IPFS_API_URL=http://ipfs:5001
       - IPFS_API_TIMEOUT=10000
       - LOG_LEVEL=debug
       - LOG_TO_FILES=true
@@ -70,7 +70,7 @@ services:
   ipfs:
     image: ceramicnetwork/go-ipfs-daemon:prod
     ports:
-      - '5011:5011'
+      - '5001:5001'
     networks:
       - internal
 

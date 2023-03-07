@@ -21,3 +21,7 @@ type RequestStatusMessage struct {
 	Attempt int       `json:"att"`
 	Loaded  bool      `json:"ld"`
 }
+
+type AnchorBatchMessage struct {
+	Id         uuid.UUID   `json:"rid"`
+}

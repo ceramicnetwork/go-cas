@@ -26,9 +26,9 @@ func (fp FailurePoller) Run() {
 	// Start from the last checkpoint or 2 days ago, whichever is sooner.
 	prevCheckpoint, err := fp.stateDb.GetCheckpoint(models.CheckpointType_FailurePoll)
 	if err != nil {
-		log.Fatalf("requestpoll: error querying checkpoint: %v", err)
+		log.Fatalf("failurepoll: error querying checkpoint: %v", err)
 	}
-	log.Printf("requestpoll: start checkpoint: %s", prevCheckpoint)
+	log.Printf("failurepoll: start checkpoint: %s", prevCheckpoint)
 	newerThan := time.Now().UTC().Add(-48 * time.Hour)
 	if prevCheckpoint.After(newerThan) {
 		newerThan = prevCheckpoint

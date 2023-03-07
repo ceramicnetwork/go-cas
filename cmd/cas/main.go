@@ -20,8 +20,8 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load("env/.env"); err != nil {
-		log.Fatal("Error loading .env file")
+	if err := godotenv.Load("../../env/.env"); err != nil {
+		log.Fatal("Error loading .env file", err)
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -71,29 +71,29 @@ func main() {
 	ceramicClient := ceramic.NewCeramicClient(strings.Split(os.Getenv("CERAMIC_URLS"), ","))
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
-	// Queue publishers
-	loadPublisher, err := queue.NewPublisher(models.QueueType_Load, sqsClient)
-	if err != nil {
-		log.Fatalf("failed to create load publisher: %v", err)
-	}
-	pinPublisher, err := queue.NewPublisher(models.QueueType_Pin, sqsClient)
-	if err != nil {
-		log.Fatalf("failed to create pin publisher: %v", err)
-	}
+	// // Queue publishers
+	// loadPublisher, err := queue.NewPublisher(models.QueueType_Load, sqsClient)
+	// if err != nil {
+	// 	log.Fatalf("failed to create load publisher: %v", err)
+	// }
+	// pinPublisher, err := queue.NewPublisher(models.QueueType_Pin, sqsClient)
+	// if err != nil {
+	// 	log.Fatalf("failed to create pin publisher: %v", err)
+	// }
 	statusPublisher, err := queue.NewPublisher(models.QueueType_Status, sqsClient)
 	if err != nil {
 		log.Fatalf("failed to create status publisher: %v", err)
 	}
 
 	// Services
-	pinningService := services.NewPinningService(ceramicClient)
-	loadingService := services.NewLoadingService(ceramicClient, loadPublisher, statusPublisher, stateDb)
+	// pinningService := services.NewPinningService(ceramicClient)
+	// loadingService := services.NewLoadingService(ceramicClient, loadPublisher, statusPublisher, stateDb)
 	statusService := services.NewStatusService(anchorDb)
 
 	// Start the queue consumers. These consumers will be responsible for scaling event processing up based on load, and
 	// also maintaining backpressure on the queues.
-	queue.NewConsumer(pinPublisher, pinningService.Pin).Start()
-	queue.NewConsumer(loadPublisher, loadingService.Load).Start()
+	// queue.NewConsumer(pinPublisher, pinningService.Pin).Start()
+	// queue.NewConsumer(loadPublisher, loadingService.Load).Start()
 	queue.NewConsumer(statusPublisher, statusService.Status).Start()
 
 	// Start the polling services last

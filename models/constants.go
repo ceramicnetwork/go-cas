@@ -12,6 +12,8 @@ const DefaultBatchMaxDepth = 10
 const DefaultBatchMaxLinger = 1 * time.Second
 const DefaultRateLimit = 10 // per second
 const DefaultQueueDepthLimit = 25
+const DefaultAnchorBatchSize = 1024
+const DefaultAnchorBatchLinger = 12 * time.Hour
 
 type QueueType string
 

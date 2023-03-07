@@ -135,7 +135,6 @@ func (sdb *StateDatabase) createTable(createTableIn *dynamodb.CreateTableInput) 
 		defer cancel()
 
 		if _, err = sdb.client.CreateTable(ctx, createTableIn); err != nil {
-			log.Printf("state: table creation error: %v", err)
 			return err
 		}
 		var exists bool
@@ -197,7 +196,7 @@ func (sdb *StateDatabase) UpdateCheckpoint(checkpointType models.CheckpointType,
 			"name": &types.AttributeValueMemberS{Value: string(checkpointType)},
 		},
 		TableName:           aws.String(sdb.checkpointTable),
-		ConditionExpression: aws.String(":value > #value"),
+		ConditionExpression: aws.String("attribute_not_exists(#value) or :value > #value"),
 		ExpressionAttributeNames: map[string]string{
 			"#value": "value",
 		},
