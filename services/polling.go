@@ -1,4 +1,4 @@
-package polling
+package services
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 )
 
 type RequestPoller struct {
-	anchorDb     models.AnchorRepository
-	stateDb      models.StateRepository
-	pinPublisher models.QueuePublisher
+	anchorDb       models.AnchorRepository
+	stateDb        models.StateRepository
+	readyPublisher models.QueuePublisher
 }
 
-func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, pinPublisher models.QueuePublisher) *RequestPoller {
+func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, readyPublisher models.QueuePublisher) *RequestPoller {
 	return &RequestPoller{
-		anchorDb:     anchorDb,
-		stateDb:      stateDb,
-		pinPublisher: pinPublisher,
+		anchorDb:       anchorDb,
+		stateDb:        stateDb,
+		readyPublisher: readyPublisher,
 	}
 }
 
@@ -65,12 +65,10 @@ func (rp RequestPoller) Run() {
 func (rp RequestPoller) sendRequestMessages(anchorReqs []*models.AnchorRequestMessage) (time.Time, error) {
 	for _, anchorReq := range anchorReqs {
 		req := anchorReq
+		// TODO: How can we ensure that requests that are processed are not picked up again?
 		go func() {
-			if _, err := rp.pinPublisher.SendMessage(context.Background(), req); err != nil {
+			if _, err := rp.readyPublisher.SendMessage(context.Background(), req); err != nil {
 				log.Printf("requestpoll: failed to send message: %v, %v", req, err)
-				// If there's an error, ignore it. Pinning is an optimization and not absolutely necessary, so it's ok
-				// if it's skipped for a few streams now and then. These streams will get loaded again eventually once
-				// the request is processed by the loading service (if necessary).
 			}
 		}()
 	}

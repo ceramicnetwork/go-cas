@@ -1,31 +1,31 @@
 version: '3.4'
 
 services:
-  cas:
-    build:
-      context: .
-      args:
-        ENV_TAG: dev
-    environment:
-      - AWS_ACCOUNT_ID=967314784947
-      - AWS_REGION=us-east-1
-      - AWS_ACCESS_KEY_ID=.
-      - AWS_SECRET_ACCESS_KEY=.
-      - AWS_ENDPOINT=http://localstack:4566
-      - DB_AWS_ENDPOINT=http://localstack:4566
-      - PG_HOST=database
-      - PG_PORT=5432
-      - PG_USER=root
-      - PG_PASSWORD=root
-      - PG_DB=anchor_db
-      - ENV=dev
-    depends_on:
-      - localstack
-      - database
-    volumes:
-      - '/var/run/docker.sock:/var/run/docker.sock'
-    networks:
-      - internal
+#  cas:
+#    build:
+#      context: .
+#      args:
+#        ENV_TAG: dev
+#    environment:
+#      - AWS_ACCOUNT_ID=967314784947
+#      - AWS_REGION=us-east-1
+#      - AWS_ACCESS_KEY_ID=.
+#      - AWS_SECRET_ACCESS_KEY=.
+#      - AWS_ENDPOINT=http://localstack:4566
+#      - DB_AWS_ENDPOINT=http://localstack:4566
+#      - PG_HOST=database
+#      - PG_PORT=5432
+#      - PG_USER=root
+#      - PG_PASSWORD=root
+#      - PG_DB=anchor_db
+#      - ENV=dev
+#    depends_on:
+#      - localstack
+#      - database
+#    volumes:
+#      - '/var/run/docker.sock:/var/run/docker.sock'
+#    networks:
+#      - internal
 
   cas_api:
     image: ceramicnetwork/ceramic-anchor-service

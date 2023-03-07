@@ -23,5 +23,6 @@ type RequestStatusMessage struct {
 }
 
 type AnchorBatchMessage struct {
-	Id         uuid.UUID   `json:"rid"`
+	Id  uuid.UUID   `json:"bid"`
+	Ids []uuid.UUID `json:"rids"`
 }

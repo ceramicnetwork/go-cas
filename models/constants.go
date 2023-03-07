@@ -18,7 +18,6 @@ const DefaultAnchorBatchLinger = 12 * time.Hour
 type QueueType string
 
 const (
-	QueueType_Pin    QueueType = "pin"
-	QueueType_Load   QueueType = "load"
-	QueueType_Status QueueType = "status"
+	QueueType_Ready QueueType = "ready"
+	QueueType_Batch QueueType = "batch"
 )
