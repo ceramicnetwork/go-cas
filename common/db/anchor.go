@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,8 +14,7 @@ import (
 )
 
 type AnchorDatabase struct {
-	opts     AnchorDbOpts
-	reloadRe *regexp.Regexp
+	opts AnchorDbOpts
 }
 
 type anchorRequest struct {
@@ -37,10 +34,7 @@ type AnchorDbOpts struct {
 }
 
 func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
-	return &AnchorDatabase{
-		opts,
-		regexp.MustCompile(`^Reload failed #(\d+) times\.$`),
-	}
+	return &AnchorDatabase{opts}
 }
 
 func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, newerThan time.Time, olderThan time.Time, msgFilters []string, limit int) ([]*models.AnchorRequestMessage, error) {
@@ -147,15 +141,4 @@ func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatu
 		return err
 	}
 	return nil
-}
-
-func (adb *AnchorDatabase) findAttemptNum(message string) *int {
-	attemptStr := adb.reloadRe.FindAllStringSubmatch(message, 1)
-	var attempt *int = nil
-	if len(attemptStr) > 0 {
-		if att, err := strconv.Atoi(attemptStr[0][1]); err == nil {
-			attempt = &att
-		}
-	}
-	return attempt
 }
