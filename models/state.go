@@ -15,10 +15,8 @@ type Checkpoint struct {
 }
 
 type StreamCid struct {
-	StreamId   string     `dynamodbav:"id"`
-	Cid        string     `dynamodbav:"cid"`
-	Timestamp  time.Time  `dynamodbav:"ts,unixtime"` // can be used for TTL
-	AnchorTs   *time.Time `dynamodbav:"anc,unixtime,omitempty"`
-	Controller *string    `dynamodbav:"ctl,omitempty"`
-	Family     *string    `dynamodbav:"fam,omitempty"`
+	StreamId  string     `dynamodbav:"id"`
+	Cid       string     `dynamodbav:"cid"`
+	Timestamp time.Time  `dynamodbav:"ts,unixtime"` // can be used for TTL
+	AnchorTs  *time.Time `dynamodbav:"anc,unixtime,omitempty"`
 }
