@@ -22,15 +22,10 @@ type AnchorDatabase struct {
 
 type anchorRequest struct {
 	Id        uuid.UUID
-	Status    models.RequestStatus
-	Pinned    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
 	Cid       string
 	StreamId  string
-	Message   string
-	Origin    string
 	Timestamp time.Time
+	Metadata  *string
 }
 
 type AnchorDbOpts struct {
@@ -49,7 +44,7 @@ func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 }
 
 func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, newerThan time.Time, olderThan time.Time, msgFilters []string, limit int) ([]*models.AnchorRequestMessage, error) {
-	query := "SELECT * FROM request WHERE status = $1 AND updated_at > $2 AND updated_at < $3"
+	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.timestamp, META.metadata FROM request AS REQ LEFT JOIN metadata AS META ON REQ.stream_id = META.stream_id WHERE status = $1 AND REQ.updated_at > $2 AND REQ.updated_at < $3"
 	if len(msgFilters) > 0 {
 		for _, msgFilter := range msgFilters {
 			query += " AND message NOT LIKE '%" + msgFilter + "%'"
@@ -71,8 +66,8 @@ func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, newerThan ti
 				Id:        anchorReq.Id,
 				StreamId:  anchorReq.StreamId,
 				Cid:       anchorReq.Cid,
-				UpdatedAt: anchorReq.UpdatedAt,
-				Attempt:   adb.findAttemptNum(anchorReq.Message),
+				Timestamp: anchorReq.Timestamp,
+				Metadata:  anchorReq.Metadata,
 			}
 		}
 		return anchorReqMsgs, nil
@@ -111,15 +106,10 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 		anchorReq := new(anchorRequest)
 		_ = rows.Scan(
 			&anchorReq.Id,
-			&anchorReq.Status,
-			&anchorReq.Pinned,
-			&anchorReq.CreatedAt,
-			&anchorReq.UpdatedAt,
 			&anchorReq.Cid,
 			&anchorReq.StreamId,
-			&anchorReq.Message,
-			&anchorReq.Origin,
 			&anchorReq.Timestamp,
+			&anchorReq.Metadata,
 		)
 		anchorRequests = append(anchorRequests, anchorReq)
 	}

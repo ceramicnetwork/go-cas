@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	if err := godotenv.Load("../../env/.env"); err != nil {
+	if err := godotenv.Load("env/.env"); err != nil {
 		log.Fatal("Error loading .env file", err)
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -52,8 +52,11 @@ func main() {
 	// ====
 	// 1. Request polling service:
 	//	- Poll anchor DB for new requests
+	//  - Post requests to Validate queue
+	// 2. Validation service:
+	//  - Deduplicate request stream/CIDs
 	//  - Post requests to Ready queue
-	// 2. Batching service:
+	// 3. Batching service:
 	//	- Read requests from Ready queue
 	//  - Accumulate requests until either batch is full or time runs out
 	//  - Post batches to Batch queue
@@ -62,27 +65,34 @@ func main() {
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Queue publishers
-	readyPublisher, err := queue.NewPublisher(models.QueueType_Ready, sqsClient)
+	validateQueue, err := queue.NewPublisher(models.QueueType_Validate, sqsClient)
 	if err != nil {
-		log.Fatalf("failed to create ready publisher: %v", err)
+		log.Fatalf("failed to create validate queue: %v", err)
 	}
-	batchPublisher, err := queue.NewPublisher(models.QueueType_Batch, sqsClient)
+	readyQueue, err := queue.NewPublisher(models.QueueType_Ready, sqsClient)
 	if err != nil {
-		log.Fatalf("failed to create batch publisher: %v", err)
+		log.Fatalf("failed to create ready queue: %v", err)
 	}
-
-	// Services
-	batchingService := services.NewBatchingService(batchPublisher)
+	batchQueue, err := queue.NewPublisher(models.QueueType_Batch, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create batch queue: %v", err)
+	}
 
 	// Start the queue consumers. These consumers will be responsible for scaling event processing up based on load, and
 	// also maintaining backpressure on the queues.
-	queue.NewConsumer(readyPublisher, batchingService.Batch).Start()
+
+	// The Batching Service reads from the Ready queue and posts to the Batch queue
+	batchingService := services.NewBatchingService(batchQueue)
+	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
+
+	// The Validation Service reads from the Validate queue and posts to the Ready queue
+	validationService := services.NewValidationService(stateDb, readyQueue)
+	queue.NewConsumer(validateQueue, validationService.Validate).Start()
 
 	// Start the polling services last
 	wg := sync.WaitGroup{}
-	wg.Add(2)
-	// Poll from the Anchor DB and post to the Ready queue so that the Batching Service can prepare a batch for Anchor
-	// Workers to process.
-	go services.NewRequestPoller(anchorDb, stateDb, readyPublisher).Run()
+	wg.Add(1)
+	// Poll from Anchor DB and post to the Validate queue to kick-off processing
+	go services.NewRequestPoller(anchorDb, stateDb, validateQueue).Run()
 	wg.Wait()
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -17,7 +18,8 @@ import (
 
 const stateTableCreationRetries = 3
 const stateTableCreationWait = 3 * time.Second
-const stateIdPosIndex = "id-pos-index"
+const stateIdTsIndex = "id-ts-index"
+const stateIdAnchorTsIndex = "id-anc-ts-index"
 
 type StateDatabase struct {
 	client          *dynamodb.Client
@@ -84,7 +86,11 @@ func (sdb *StateDatabase) createStreamTable() error {
 				AttributeType: "S",
 			},
 			{
-				AttributeName: aws.String("pos"),
+				AttributeName: aws.String("ts"),
+				AttributeType: "N",
+			},
+			{
+				AttributeName: aws.String("ats"),
 				AttributeType: "N",
 			},
 		},
@@ -105,14 +111,34 @@ func (sdb *StateDatabase) createStreamTable() error {
 		},
 		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
 			{
-				IndexName: aws.String(stateIdPosIndex),
+				IndexName: aws.String(stateIdTsIndex),
 				KeySchema: []types.KeySchemaElement{
 					{
 						AttributeName: aws.String("id"),
 						KeyType:       "HASH",
 					},
 					{
-						AttributeName: aws.String("pos"),
+						AttributeName: aws.String("ts"),
+						KeyType:       "RANGE",
+					},
+				},
+				Projection: &types.Projection{
+					ProjectionType: types.ProjectionTypeAll,
+				},
+				ProvisionedThroughput: &types.ProvisionedThroughput{
+					ReadCapacityUnits:  aws.Int64(1),
+					WriteCapacityUnits: aws.Int64(1),
+				},
+			},
+			{
+				IndexName: aws.String(stateIdAnchorTsIndex),
+				KeySchema: []types.KeySchemaElement{
+					{
+						AttributeName: aws.String("id"),
+						KeyType:       "HASH",
+					},
+					{
+						AttributeName: aws.String("ats"),
 						KeyType:       "RANGE",
 					},
 				},
@@ -210,13 +236,41 @@ func (sdb *StateDatabase) UpdateCheckpoint(checkpointType models.CheckpointType,
 		var condUpdErr *types.ConditionalCheckFailedException
 		if errors.As(err, &condUpdErr) {
 			// Not an error, just indicate that we couldn't update the entry
-			log.Printf("could not update checkpoint: %s, %v", checkpointStr, err)
+			log.Printf("updateCheckpoint: could not update checkpoint: %s, %v", checkpointStr, err)
 			return false, nil
 		}
-		log.Printf("error writing to db: %v", err)
+		log.Printf("updateCheckpoint: error writing to db: %v", err)
 		return false, err
 	}
 	return true, nil
+}
+
+func (sdb *StateDatabase) StoreCid(streamCid *models.StreamCid) (bool, error) {
+	if attributeValues, err := attributevalue.MarshalMapWithOptions(streamCid); err != nil {
+		return false, err
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+		defer cancel()
+
+		// Deduplicate CIDs
+		putItemIn := dynamodb.PutItemInput{
+			TableName:                aws.String(sdb.streamTable),
+			ConditionExpression:      aws.String("attribute_not_exists(#id)"),
+			ExpressionAttributeNames: map[string]string{"#id": "id"},
+			Item:                     attributeValues,
+		}
+		if _, err = sdb.client.PutItem(ctx, &putItemIn); err != nil {
+			// To get a specific API error
+			var condUpdErr *types.ConditionalCheckFailedException
+			if errors.As(err, &condUpdErr) {
+				// Not an error, just indicate that we couldn't write the entry
+				return false, nil
+			}
+			log.Printf("storeCid: error writing to db: %v", err)
+			return false, err
+		}
+		return true, nil
+	}
 }
 
 func (sdb *StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error) {
@@ -244,12 +298,12 @@ func (sdb *StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error
 	return nil, nil
 }
 
-func (sdb *StateDatabase) GetStreamTip(streamId string) (*models.StreamCid, error) {
+func (sdb *StateDatabase) GetTipCid(streamId string) (*models.StreamCid, error) {
 	var latest *models.StreamCid = nil
 	if err := sdb.iterateCids(
 		&dynamodb.QueryInput{
 			TableName:              aws.String(sdb.streamTable),
-			IndexName:              aws.String(stateIdPosIndex),
+			IndexName:              aws.String(stateIdTsIndex),
 			KeyConditionExpression: aws.String("#id = :id"),
 			ExpressionAttributeValues: map[string]types.AttributeValue{
 				":id": &types.AttributeValueMemberS{Value: streamId},
@@ -257,16 +311,82 @@ func (sdb *StateDatabase) GetStreamTip(streamId string) (*models.StreamCid, erro
 			ExpressionAttributeNames: map[string]string{
 				"#id": "id",
 			},
-			ScanIndexForward: aws.Bool(false), // always descending
+			ScanIndexForward: aws.Bool(false), // descending
 		},
 		func(streamCid *models.StreamCid) bool {
 			latest = streamCid
-			return false // always stop iteration after the first entry
+			return false // stop iteration after the first entry
 		},
 	); err != nil {
 		return nil, err
 	}
 	return latest, nil
+}
+
+func (sdb *StateDatabase) UpdateAnchorTs(streamId, cid string, anchorTs time.Time) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+	defer cancel()
+
+	updateItemIn := dynamodb.UpdateItemInput{
+		Key: map[string]types.AttributeValue{
+			"id":  &types.AttributeValueMemberS{Value: streamId},
+			"cid": &types.AttributeValueMemberS{Value: cid},
+		},
+		TableName:           aws.String(sdb.streamTable),
+		ConditionExpression: aws.String("attribute_not_exists(#ancTs)"),
+		ExpressionAttributeNames: map[string]string{
+			"#ancTs": "ats",
+		},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":ancTs": &types.AttributeValueMemberN{Value: strconv.FormatInt(anchorTs.Unix(), 10)},
+		},
+		UpdateExpression: aws.String("set #ancTs = :ancTs"),
+	}
+	if _, err := sdb.client.UpdateItem(ctx, &updateItemIn); err != nil {
+		// To get a specific API error
+		var condUpdErr *types.ConditionalCheckFailedException
+		if errors.As(err, &condUpdErr) {
+			// Not an error, just indicate that we couldn't update the entry
+			log.Printf("updateAnchorTs: anchor timestamp already set: %s, %s, %s, %v", streamId, cid, anchorTs, err)
+			return false, nil
+		}
+		log.Printf("updateAnchorTs: error writing to db: %v", err)
+		return false, err
+	}
+	return true, nil
+}
+
+func (sdb *StateDatabase) GetAnchoredCid(streamId, cid string) (*models.StreamCid, error) {
+	if streamCid, err := sdb.GetCid(streamId, cid); err != nil {
+		return nil, err
+	} else if streamCid.AnchorTs != nil {
+		return streamCid, nil
+	} else {
+		var anchoredCid *models.StreamCid = nil
+		if err = sdb.iterateCids(
+			&dynamodb.QueryInput{
+				TableName:              aws.String(sdb.streamTable),
+				IndexName:              aws.String(stateIdAnchorTsIndex),
+				KeyConditionExpression: aws.String("#id = :id and #ancTs >= :ts"),
+				ExpressionAttributeValues: map[string]types.AttributeValue{
+					":id": &types.AttributeValueMemberS{Value: streamId},
+					":ts": &types.AttributeValueMemberN{Value: strconv.FormatInt(streamCid.Timestamp.Unix(), 10)},
+				},
+				ExpressionAttributeNames: map[string]string{
+					"#id":    "id",
+					"#ancTs": "ats",
+				},
+				ScanIndexForward: aws.Bool(true), // ascending
+			},
+			func(streamCid *models.StreamCid) bool {
+				anchoredCid = streamCid
+				return false // stop iteration after the first entry
+			},
+		); err != nil {
+			return nil, err
+		}
+		return anchoredCid, nil
+	}
 }
 
 func (sdb *StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func(*models.StreamCid) bool) error {
@@ -298,19 +418,4 @@ func (sdb *StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func
 		}
 	}
 	return nil
-}
-
-func (sdb *StateDatabase) UpdateCid(streamCid *models.StreamCid) error {
-	if attributeValues, err := attributevalue.MarshalMapWithOptions(streamCid); err != nil {
-		return err
-	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-		defer cancel()
-
-		_, err = sdb.client.PutItem(ctx, &dynamodb.PutItemInput{
-			TableName: aws.String(sdb.streamTable),
-			Item:      attributeValues,
-		})
-		return err
-	}
 }

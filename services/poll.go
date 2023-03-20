@@ -73,5 +73,5 @@ func (rp RequestPoller) sendRequestMessages(anchorReqs []*models.AnchorRequestMe
 		}()
 	}
 	// Just return the timestamp from the last request in the list so that processing keeps moving along
-	return anchorReqs[len(anchorReqs)-1].UpdatedAt, nil
+	return anchorReqs[len(anchorReqs)-1].Timestamp, nil
 }

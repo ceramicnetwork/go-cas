@@ -34,26 +34,10 @@ func NewBatchingService(batchPublisher models.QueuePublisher) *BatchingService {
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-
+	batchingService := BatchingService{batchPublisher: batchPublisher}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
-	batcher := batch.New[*models.AnchorRequestMessage, *uuid.UUID](beOpts, func(anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
-		anchorReqBatch := models.AnchorBatchMessage{
-			Id:  uuid.New(),
-			Ids: make([]uuid.UUID, len(anchorReqs)),
-		}
-		batchResults := make([]results.Result[*uuid.UUID], len(anchorReqs))
-		for idx, anchorReq := range anchorReqs {
-			anchorReqBatch.Ids[idx] = anchorReq.Id
-			batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
-		}
-		if _, err := batchPublisher.SendMessage(context.Background(), anchorReqBatch); err != nil {
-			log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
-			return nil, err
-		}
-		log.Printf("batch: generated batch: %v", anchorReqBatch)
-		return batchResults, nil
-	})
-	return &BatchingService{batchPublisher, batcher}
+	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](beOpts, batchingService.batch)
+	return &batchingService
 }
 
 func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
@@ -67,4 +51,22 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 		log.Printf("batch: processed request %s in batch %s", anchorReq.Id, batchId)
 		return nil
 	}
+}
+
+func (b BatchingService) batch(anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
+	anchorReqBatch := models.AnchorBatchMessage{
+		Id:  uuid.New(),
+		Ids: make([]uuid.UUID, len(anchorReqs)),
+	}
+	batchResults := make([]results.Result[*uuid.UUID], len(anchorReqs))
+	for idx, anchorReq := range anchorReqs {
+		anchorReqBatch.Ids[idx] = anchorReq.Id
+		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
+	}
+	if _, err := b.batchPublisher.SendMessage(context.Background(), anchorReqBatch); err != nil {
+		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
+		return nil, err
+	}
+	log.Printf("batch: generated batch: %v", anchorReqBatch)
+	return batchResults, nil
 }

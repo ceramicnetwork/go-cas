@@ -14,12 +14,10 @@ https://lucid.app/documents/view/9fb65517-add6-48f5-a35b-e8c5835a9762
 
 ### Major
 
-- [ ] Implement batching service
 - [ ] Implement failure handling service
 - [ ] Prepare Anchor Worker code to accept batches
 - [ ] Prepare Anchor Worker code to post anchor results to a queue
-- [ ] CD manager to inject batches into workers
-- [ ] Remove Ceramic loading and pinning
+- [ ] Graceful shutdown
 - [ ] Terraform for deployments
 - [ ] Implement [dead-letter queue (DLQ)](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
 - [ ] Metrics
