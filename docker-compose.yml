@@ -1,31 +1,31 @@
 version: '3.4'
 
 services:
-#  cas:
-#    build:
-#      context: .
-#      args:
-#        ENV_TAG: dev
-#    environment:
-#      - AWS_ACCOUNT_ID=967314784947
-#      - AWS_REGION=us-east-1
-#      - AWS_ACCESS_KEY_ID=.
-#      - AWS_SECRET_ACCESS_KEY=.
-#      - AWS_ENDPOINT=http://localstack:4566
-#      - DB_AWS_ENDPOINT=http://localstack:4566
-#      - PG_HOST=database
-#      - PG_PORT=5432
-#      - PG_USER=root
-#      - PG_PASSWORD=root
-#      - PG_DB=anchor_db
-#      - ENV=dev
-#    depends_on:
-#      - localstack
-#      - database
-#    volumes:
-#      - '/var/run/docker.sock:/var/run/docker.sock'
-#    networks:
-#      - internal
+  cas:
+    build:
+      context: .
+      args:
+        ENV_TAG: dev
+    environment:
+      - AWS_ACCOUNT_ID=000000000000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=.
+      - AWS_SECRET_ACCESS_KEY=.
+      - AWS_ENDPOINT=http://localstack:4566
+      - DB_AWS_ENDPOINT=http://localstack:4566
+      - PG_HOST=database
+      - PG_PORT=5432
+      - PG_USER=root
+      - PG_PASSWORD=root
+      - PG_DB=anchor_db
+      - ENV=dev
+    depends_on:
+      - localstack
+      - database
+    volumes:
+      - '/var/run/docker.sock:/var/run/docker.sock'
+    networks:
+      - internal
 
   cas_api:
     image: ceramicnetwork/ceramic-anchor-service
@@ -67,8 +67,29 @@ services:
     networks:
       - internal
 
+  cas_worker:
+    build:
+      context: ../ceramic-anchor-service
+      target: base
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=steph
+      - AWS_ACCOUNT_ID=000000000000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=.
+      - AWS_SECRET_ACCESS_KEY=.
+    depends_on:
+      - ipfs
+      - database
+      - localstack
+      - cas_api
+    volumes:
+      - './migrations:/cas/migrations'
+    networks:
+      - internal
+
   ipfs:
-    image: ceramicnetwork/go-ipfs-daemon:prod
+    image: ceramicnetwork/go-ipfs-daemon
     ports:
       - '5001:5001'
     networks:
@@ -86,38 +107,24 @@ services:
       - internal
 
   localstack:
-    image: localstack/localstack:latest
+    image: localstack/localstack
     container_name: localstack
     ports:
       - '4563-4584:4563-4584'
       - '8055:8080'
     environment:
-      - SERVICES=rds,sqs,dynamodb
+      - SERVICES=sqs,dynamodb
     networks:
       - internal
 
-#  ganache:
-#    image: trufflesuite/ganache-cli:latest
-#    ports:
-#      - "8545:8545"
-#    volumes:
-#      - ./data/ganache:/ganache_data
-#    entrypoint:
-#      - node
-#      - /app/ganache-core.docker.cli.js
-#      - --deterministic
-#      - --db=/ganache_data
-#      - --mnemonic
-#      - 'move sense much taxi wave hurry recall stairs thank brother nut woman'
-#      - --networkId
-#      - '5777'
-#      - --hostname
-#      - '0.0.0.0'
-#      - -l
-#      - '80000000'
-#      - --quiet
-#    networks:
-#      - internal
+  ganache:
+    image: trufflesuite/ganache
+    ports:
+      - '8545:8545'
+    command:
+      - "--mnemonic='move sense much taxi wave hurry recall stairs thank brother nut woman' --networkId=5777 --hostname=0.0.0.0 -l=80000000"
+    networks:
+      - internal
 
 networks:
   internal:

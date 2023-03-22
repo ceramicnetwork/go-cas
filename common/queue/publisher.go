@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
 	"github.com/abevier/go-sqs/gosqs"
 
@@ -16,6 +18,7 @@ import (
 )
 
 const publisherMaxLinger = 250 * time.Millisecond
+const publisherDefaultVisibilityTimeout = 5 * time.Minute
 
 type Publisher struct {
 	publisher *gosqs.SQSPublisher
@@ -35,10 +38,18 @@ func NewPublisher(queueType models.QueueType, sqsClient *sqs.Client) (*Publisher
 }
 
 func createQueue(queueType models.QueueType, sqsClient *sqs.Client) (string, error) {
+	visibilityTimeout := publisherDefaultVisibilityTimeout
+	if configVisibilityTimeout, found := os.LookupEnv("QUEUE_VISIBILITY_TIMEOUT"); found {
+		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
+			visibilityTimeout = parsedVisibilityTimeout
+		}
+	}
 	createQueueIn := sqs.CreateQueueInput{
 		QueueName: aws.String(fmt.Sprintf("cas-anchor-%s-%s", os.Getenv("ENV"), string(queueType))),
+		Attributes: map[string]string{
+			string(types.QueueAttributeNameVisibilityTimeout): strconv.Itoa(int(visibilityTimeout.Seconds())),
+		},
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
 

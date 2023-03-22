@@ -8,7 +8,7 @@ import (
 )
 
 type AnchorRepository interface {
-	GetRequests(RequestStatus, time.Time, time.Time, []string, int) ([]*AnchorRequestMessage, error)
+	GetRequests(RequestStatus, time.Time, int) ([]*AnchorRequestMessage, error)
 	UpdateStatus(uuid.UUID, RequestStatus, string) error
 }
 

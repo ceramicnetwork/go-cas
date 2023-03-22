@@ -29,31 +29,29 @@ func (rp RequestPoller) Run() {
 		log.Fatalf("requestpoll: error querying checkpoint: %v", err)
 	}
 	log.Printf("requestpoll: start checkpoint: %s", prevCheckpoint)
-	newerThan := prevCheckpoint
+	since := prevCheckpoint
 
 	for {
 		if anchorReqs, err := rp.anchorDb.GetRequests(
 			models.RequestStatus_Pending,
-			newerThan,
-			time.Now().UTC(),
-			nil,
+			since,
 			models.DbLoadLimit,
 		); err != nil {
 			log.Printf("requestpoll: error loading requests: %v", err)
 		} else if len(anchorReqs) > 0 {
-			log.Printf("requestpoll: found %d requests", len(anchorReqs))
+			log.Printf("requestpoll: found %d requests newer than %s", len(anchorReqs), since)
 			if nextCheckpoint, err := rp.sendRequestMessages(anchorReqs); err != nil {
 				log.Printf("requestpoll: error processing requests: %v", err)
 			} else
 			// It's possible the checkpoint was updated even if a particular request in the batch failed to be queued
-			if nextCheckpoint.After(newerThan) {
-				log.Printf("requestpoll: old=%s, new=%s", newerThan, nextCheckpoint)
+			if nextCheckpoint.After(since) {
+				log.Printf("requestpoll: old=%s, new=%s", since, nextCheckpoint)
 				if _, err = rp.stateDb.UpdateCheckpoint(models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
 					log.Printf("requestpoll: error updating checkpoint %s: %v", nextCheckpoint, err)
 				} else {
 					// Only update checkpoint in-memory once it's been written to DB. This means that it's possible that
 					// we might reprocess Anchor DB entries, but we can handle this.
-					newerThan = nextCheckpoint
+					since = nextCheckpoint
 				}
 			}
 		}
@@ -63,15 +61,17 @@ func (rp RequestPoller) Run() {
 }
 
 func (rp RequestPoller) sendRequestMessages(anchorReqs []*models.AnchorRequestMessage) (time.Time, error) {
+	processedCheckpoint := anchorReqs[0].CreatedAt.Add(-time.Millisecond)
 	for _, anchorReq := range anchorReqs {
-		req := anchorReq
-		// TODO: How can we ensure that requests that are processed are not picked up again?
-		go func() {
-			if _, err := rp.readyPublisher.SendMessage(context.Background(), req); err != nil {
-				log.Printf("requestpoll: failed to send message: %v, %v", req, err)
-			}
-		}()
+		// Ideally, we send messages from inside a goroutine but that makes it difficult to ensure the correctness of
+		// the checkpoint (e.g. what if one message from the middle of the batch fails to send?). For now, while we're
+		// still using two databases, make this sequential. Once we have a single database, we won't need the poller at
+		// all - the API can then write directly to DynamoDB/SQS.
+		if _, err := rp.readyPublisher.SendMessage(context.Background(), anchorReq); err != nil {
+			log.Printf("requestpoll: failed to send message: %v, %v", anchorReq, err)
+			break
+		}
+		processedCheckpoint = anchorReq.CreatedAt
 	}
-	// Just return the timestamp from the last request in the list so that processing keeps moving along
-	return anchorReqs[len(anchorReqs)-1].Timestamp, nil
+	return processedCheckpoint, nil
 }

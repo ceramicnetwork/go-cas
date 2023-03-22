@@ -7,11 +7,12 @@ import (
 )
 
 type AnchorRequestMessage struct {
-	Id        uuid.UUID `json:"rid"`
-	StreamId  string    `json:"sid"`
-	Cid       string    `json:"cid"`
-	Timestamp time.Time `json:"ts"`
-	Metadata  *string   `json:"mta,omitempty"`
+	Id        uuid.UUID       `json:"rid"`
+	StreamId  string          `json:"sid"`
+	Cid       string          `json:"cid"`
+	Timestamp time.Time       `json:"ts"`
+	Metadata  *StreamMetadata `json:"mta,omitempty"`
+	CreatedAt time.Time
 }
 
 type AnchorBatchMessage struct {
