@@ -28,12 +28,11 @@ services:
       - internal
 
   cas_api:
-    image: ceramicnetwork/ceramic-anchor-service
+    image: ceramicnetwork/ceramic-anchor-service:release-candidate
     environment:
       - NODE_ENV=dev
       - APP_MODE=server
       - APP_PORT=8081
-      - USE_SMART_CONTRACT_ANCHORS=true
       - ANCHOR_CONTROLLER_ENABLED=false
       - ANCHOR_EXPIRATION_PERIOD=0
       - ANCHOR_SCHEDULE_EXPRESSION=0/1 * * * ? *
@@ -41,12 +40,13 @@ services:
       - CERAMIC_API_URL=http://host.docker.internal:7007
       - ETH_GAS_LIMIT=4712388
       - ETH_GAS_PRICE=100000000000
-      - ETH_NETWORK=goerli
+      - ETH_NETWORK=ganache
+      - ETH_RPC_URL=http://ganache:8545
       - ETH_OVERRIDE_GAS_CONFIG=false
-      - ETH_WALLET_PK=0x16dd0990d19001c50eeea6d32e8fdeef40d3945962caf18c18c3930baa5a6ec9
-      - ETH_CONTRACT_ADDRESS=0x231055A0852D67C7107Ad0d0DFeab60278fE6AdC
+      - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
+      - ETH_CONTRACT_ADDRESS=0x663F90C8A3B4dA654e2d23b6564426FEDa684c8F
       - IPFS_API_URL=http://ipfs:5001
-      - IPFS_API_TIMEOUT=10000
+      - IPFS_API_TIMEOUT=120000
       - LOG_LEVEL=debug
       - LOG_TO_FILES=true
       - LOG_PATH=/usr/local/var/log
@@ -73,7 +73,35 @@ services:
       target: base
     restart: unless-stopped
     environment:
-      - NODE_ENV=steph
+      - NODE_ENV=dev
+      - APP_MODE=anchor
+      - APP_PORT=8081
+      - USE_SMART_CONTRACT_ANCHORS=true
+      - USE_QUEUE_BATCHES=true
+      - ANCHOR_CONTROLLER_ENABLED=false
+      - INCLUDE_BLOCK_INFO_IN_ANCHOR_PROOF=false
+      - MERKLE_DEPTH_LIMIT=0
+      - MIN_STREAM_COUNT=2
+      - IPFS_API_URL=http://ipfs:5001
+      - IPFS_PUBSUB_TOPIC=/steph
+      - IPFS_API_TIMEOUT=60000
+      - IPFS_CONCURRENT_GET_LIMIT=100
+      - BLOCKCHAIN_CONNECTOR=ethereum
+      - ETH_NETWORK=ganache
+      - ETH_OVERRIDE_GAS_CONFIG=false
+      - ETH_GAS_LIMIT=6721975
+      - ETH_RPC_URL=http://ganache:8545
+      - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
+      - ETH_CONTRACT_ADDRESS=0x663F90C8A3B4dA654e2d23b6564426FEDa684c8F
+      - LOG_LEVEL=debug
+      - LOG_TO_FILES=true
+      - LOG_PATH=/usr/local/var/log
+      - DB_NAME=anchor_db
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-batch
       - AWS_ACCOUNT_ID=000000000000
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=.
@@ -83,6 +111,8 @@ services:
       - database
       - localstack
       - cas_api
+      - launch_contract
+      - ganache
     volumes:
       - './migrations:/cas/migrations'
     networks:
@@ -123,6 +153,18 @@ services:
       - '8545:8545'
     command:
       - "--mnemonic='move sense much taxi wave hurry recall stairs thank brother nut woman' --networkId=5777 --hostname=0.0.0.0 -l=80000000"
+    networks:
+      - internal
+
+  launch_contract:
+    build:
+      context: .
+      dockerfile: Dockerfile.launchContract
+    environment:
+      - ETH_RPC_URL=http://ganache:8545
+      - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
+    depends_on:
+      - ganache
     networks:
       - internal
 
