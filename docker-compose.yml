@@ -28,7 +28,8 @@ services:
       - internal
 
   cas_api:
-    image: ceramicnetwork/ceramic-anchor-service:release-candidate
+    image: ceramicnetwork/ceramic-anchor-service
+    container_name: cas_api
     environment:
       - NODE_ENV=dev
       - APP_MODE=server
@@ -71,6 +72,7 @@ services:
     build:
       context: ../ceramic-anchor-service
       target: base
+    container_name: cas_worker
     restart: unless-stopped
     environment:
       - NODE_ENV=dev
@@ -120,6 +122,7 @@ services:
 
   ipfs:
     image: ceramicnetwork/go-ipfs-daemon
+    container_name: ipfs
     ports:
       - '5001:5001'
     networks:
@@ -127,6 +130,7 @@ services:
 
   database:
     image: 'postgres'
+    container_name: database
     environment:
       - POSTGRES_USER=root
       - POSTGRES_PASSWORD=root
@@ -149,6 +153,7 @@ services:
 
   ganache:
     image: trufflesuite/ganache
+    container_name: ganache
     ports:
       - '8545:8545'
     command:
@@ -160,6 +165,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.launchContract
+    container_name: contract
     environment:
       - ETH_RPC_URL=http://ganache:8545
       - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
