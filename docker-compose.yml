@@ -6,6 +6,8 @@ services:
       context: .
       args:
         ENV_TAG: dev
+    container_name: go_cas
+    restart: on-failure
     environment:
       - AWS_ACCOUNT_ID=000000000000
       - AWS_REGION=us-east-1
@@ -19,6 +21,7 @@ services:
       - PG_PASSWORD=root
       - PG_DB=anchor_db
       - ENV=dev
+      - ANCHOR_BATCH_SIZE=2
     depends_on:
       - localstack
       - database
@@ -28,8 +31,9 @@ services:
       - internal
 
   cas_api:
-    image: ceramicnetwork/ceramic-anchor-service
+    image: ceramicnetwork/ceramic-anchor-service:release-candidate
     container_name: cas_api
+    restart: on-failure
     environment:
       - NODE_ENV=dev
       - APP_MODE=server
@@ -72,7 +76,6 @@ services:
     build:
       context: ../ceramic-anchor-service
       target: base
-    container_name: cas_worker
     restart: unless-stopped
     environment:
       - NODE_ENV=dev
@@ -104,6 +107,7 @@ services:
       - DB_USERNAME=root
       - DB_PASSWORD=root
       - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-batch
+      - SQS_QUEUE_USE_POLLING=true
       - AWS_ACCOUNT_ID=000000000000
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=.
@@ -115,10 +119,14 @@ services:
       - cas_api
       - launch_contract
       - ganache
+      - cas
     volumes:
       - './migrations:/cas/migrations'
     networks:
       - internal
+    deploy:
+      mode: replicated
+      replicas: 2
 
   ipfs:
     image: ceramicnetwork/go-ipfs-daemon
