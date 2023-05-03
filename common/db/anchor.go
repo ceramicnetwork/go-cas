@@ -4,33 +4,26 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/smrz2001/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type AnchorDatabase struct {
-	opts     AnchorDbOpts
-	reloadRe *regexp.Regexp
+	opts AnchorDbOpts
 }
 
 type anchorRequest struct {
 	Id        uuid.UUID
-	Status    models.RequestStatus
-	Pinned    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
 	Cid       string
 	StreamId  string
-	Message   string
-	Origin    string
+	CreatedAt time.Time
 	Timestamp time.Time
+	Metadata  *models.StreamMetadata
 }
 
 type AnchorDbOpts struct {
@@ -42,24 +35,15 @@ type AnchorDbOpts struct {
 }
 
 func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
-	return &AnchorDatabase{
-		opts,
-		regexp.MustCompile(`^Reload failed #(\d+) times\.$`),
-	}
+	return &AnchorDatabase{opts}
 }
 
-func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, newerThan time.Time, olderThan time.Time, msgFilters []string, limit int) ([]*models.AnchorRequestMessage, error) {
-	query := "SELECT * FROM request WHERE status = $1 AND updated_at > $2 AND updated_at < $3"
-	if len(msgFilters) > 0 {
-		for _, msgFilter := range msgFilters {
-			query += " AND message NOT LIKE '%" + msgFilter + "%'"
-		}
-	}
+func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
+	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.created_at, REQ.timestamp, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
 	anchorRequests, err := adb.query(
-		query+" ORDER BY updated_at LIMIT $4",
+		query,
 		status,
-		newerThan.Format(models.DbDateFormat),
-		olderThan.Format(models.DbDateFormat),
+		since.Format(models.DbDateFormat),
 		limit,
 	)
 	if err != nil {
@@ -71,8 +55,9 @@ func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, newerThan ti
 				Id:        anchorReq.Id,
 				StreamId:  anchorReq.StreamId,
 				Cid:       anchorReq.Cid,
-				UpdatedAt: anchorReq.UpdatedAt,
-				Attempt:   adb.findAttemptNum(anchorReq.Message),
+				Timestamp: anchorReq.Timestamp,
+				Metadata:  anchorReq.Metadata,
+				CreatedAt: anchorReq.CreatedAt,
 			}
 		}
 		return anchorReqMsgs, nil
@@ -109,18 +94,18 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 	anchorRequests := make([]*anchorRequest, 0)
 	for rows.Next() {
 		anchorReq := new(anchorRequest)
-		_ = rows.Scan(
+		err = rows.Scan(
 			&anchorReq.Id,
-			&anchorReq.Status,
-			&anchorReq.Pinned,
-			&anchorReq.CreatedAt,
-			&anchorReq.UpdatedAt,
 			&anchorReq.Cid,
 			&anchorReq.StreamId,
-			&anchorReq.Message,
-			&anchorReq.Origin,
+			&anchorReq.CreatedAt,
 			&anchorReq.Timestamp,
+			&anchorReq.Metadata,
 		)
+		if err != nil {
+			log.Printf("query: error scanning db row: %v", err)
+			return nil, err
+		}
 		anchorRequests = append(anchorRequests, anchorReq)
 	}
 	return anchorRequests, nil
@@ -157,15 +142,4 @@ func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatu
 		return err
 	}
 	return nil
-}
-
-func (adb *AnchorDatabase) findAttemptNum(message string) *int {
-	attemptStr := adb.reloadRe.FindAllStringSubmatch(message, 1)
-	var attempt *int = nil
-	if len(attemptStr) > 0 {
-		if att, err := strconv.Atoi(attemptStr[0][1]); err == nil {
-			attempt = &att
-		}
-	}
-	return attempt
 }

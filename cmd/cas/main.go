@@ -3,25 +3,22 @@ package main
 import (
 	"log"
 	"os"
-	"strings"
 	"sync"
 
 	"github.com/joho/godotenv"
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
-	"github.com/smrz2001/go-cas/common/ceramic"
-	"github.com/smrz2001/go-cas/common/db"
-	"github.com/smrz2001/go-cas/common/queue"
-	"github.com/smrz2001/go-cas/common/utils"
-	"github.com/smrz2001/go-cas/models"
-	"github.com/smrz2001/go-cas/services"
-	"github.com/smrz2001/go-cas/services/polling"
+	"github.com/ceramicnetwork/go-cas/common/db"
+	"github.com/ceramicnetwork/go-cas/common/queue"
+	"github.com/ceramicnetwork/go-cas/common/utils"
+	"github.com/ceramicnetwork/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/services"
 )
 
 func main() {
 	if err := godotenv.Load("env/.env"); err != nil {
-		log.Fatal("Error loading .env file")
+		log.Fatal("Error loading .env file", err)
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
@@ -55,45 +52,47 @@ func main() {
 	// ====
 	// 1. Request polling service:
 	//	- Poll anchor DB for new requests
-	//  - Post requests to Pin queue
-	// 2. Failure polling service:
-	//	- Poll anchor DB for requests FAILED more than 6 hours ago
-	//  - Post requests to the Load queue
-	// 3. Pinning service:
-	//	- Read requests from the Pin queue
-	//  - Send stream pin requests to Ceramic
-	// 4. Loading service:
-	//	- Read requests from the Load queue
-	//  - Send one or more multiqueries to Ceramic with stream/CID load requests
-	//  - Write successful results to anchor DB
+	//  - Post requests to Validate queue
+	// 2. Validation service:
+	//  - Deduplicate request stream/CIDs
+	//  - Post requests to Ready queue
+	// 3. Batching service:
+	//	- Read requests from Ready queue
+	//  - Accumulate requests until either batch is full or time runs out
+	//  - Post batches to Batch queue
 
 	// HTTP clients
-	ceramicClient := ceramic.NewCeramicClient(strings.Split(os.Getenv("CERAMIC_URLS"), ","))
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Queue publishers
-	loadPublisher := queue.NewPublisher(models.QueueType_Load, sqsClient)
-	pinPublisher := queue.NewPublisher(models.QueueType_Pin, sqsClient)
-	statusPublisher := queue.NewPublisher(models.QueueType_Status, sqsClient)
-
-	// Services
-	pinningService := services.NewPinningService(ceramicClient)
-	loadingService := services.NewLoadingService(ceramicClient, loadPublisher, statusPublisher, stateDb)
-	statusService := services.NewStatusService(anchorDb)
+	validateQueue, err := queue.NewPublisher(models.QueueType_Validate, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create validate queue: %v", err)
+	}
+	readyQueue, err := queue.NewPublisher(models.QueueType_Ready, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create ready queue: %v", err)
+	}
+	batchQueue, err := queue.NewPublisher(models.QueueType_Batch, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to create batch queue: %v", err)
+	}
 
 	// Start the queue consumers. These consumers will be responsible for scaling event processing up based on load, and
 	// also maintaining backpressure on the queues.
-	queue.NewConsumer(pinPublisher, pinningService.Pin).Start()
-	queue.NewConsumer(loadPublisher, loadingService.Load).Start()
-	queue.NewConsumer(statusPublisher, statusService.Status).Start()
+
+	// The Batching Service reads from the Ready queue and posts to the Batch queue
+	batchingService := services.NewBatchingService(batchQueue)
+	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
+
+	// The Validation Service reads from the Validate queue and posts to the Ready queue
+	validationService := services.NewValidationService(stateDb, readyQueue)
+	queue.NewConsumer(validateQueue, validationService.Validate).Start()
 
 	// Start the polling services last
 	wg := sync.WaitGroup{}
-	wg.Add(2)
-	// Poll from the anchor DB and post to the Pin queue for Ceramic to pin the corresponding streams
-	go polling.NewRequestPoller(anchorDb, stateDb, pinPublisher).Run()
-	// Poll from the anchor DB and post to the Load queue for Ceramic to re-attempt loading the corresponding streams
-	// and CIDs.
-	go polling.NewFailurePoller(anchorDb, stateDb, loadPublisher).Run()
+	wg.Add(1)
+	// Poll from Anchor DB and post to the Validate queue to kick-off processing
+	go services.NewRequestPoller(anchorDb, stateDb, validateQueue).Run()
 	wg.Wait()
 }

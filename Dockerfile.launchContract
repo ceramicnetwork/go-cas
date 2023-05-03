@@ -1,0 +1,8 @@
+FROM ghcr.io/foundry-rs/foundry as contractLauncher
+
+# Build and test the source code
+COPY ./contracts .
+RUN forge install foundry-rs/forge-std --no-git
+RUN forge install openzeppelin/openzeppelin-contracts --no-git
+RUN forge build --use 0.8.17
+ENTRYPOINT forge create --contracts ./src/CeramicAnchorServiceV2.sol --private-key $ETH_WALLET_PK --rpc-url $ETH_RPC_URL CeramicAnchorServiceV2

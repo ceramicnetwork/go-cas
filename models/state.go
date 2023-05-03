@@ -15,13 +15,8 @@ type Checkpoint struct {
 }
 
 type StreamCid struct {
-	StreamId   string      `dynamodbav:"id"`
-	Cid        string      `dynamodbav:"cid"`
-	Timestamp  time.Time   `dynamodbav:"ts,unixtime"` // can be used for TTL
-	StreamType *StreamType `dynamodbav:"stp,omitempty"`
-	Controller *string     `dynamodbav:"ctl,omitempty"`
-	Family     *string     `dynamodbav:"fam,omitempty"`
-	CommitType *CommitType `dynamodbav:"ctp,omitempty"`
-	Loaded     *bool       `dynamodbav:"lod,omitempty"`
-	Position   *int        `dynamodbav:"pos,omitempty"` // commit index in stream log
+	StreamId  string     `dynamodbav:"id"`
+	Cid       string     `dynamodbav:"cid"`
+	Timestamp time.Time  `dynamodbav:"ts,unixtime"` // can be used for TTL
+	AnchorTs  *time.Time `dynamodbav:"anc,unixtime,omitempty"`
 }

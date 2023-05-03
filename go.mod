@@ -1,6 +1,8 @@
-module github.com/smrz2001/go-cas
+module github.com/ceramicnetwork/go-cas
 
 go 1.18
+
+//replace github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567 => ../go-sqs
 
 require (
 	github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567
@@ -11,11 +13,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.8
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.19.17
 	github.com/google/uuid v1.3.0
-	github.com/ipfs/go-cid v0.3.2
 	github.com/jackc/pgx/v5 v5.1.1
 	github.com/joho/godotenv v1.4.0
-	github.com/multiformats/go-multibase v0.0.3
-	github.com/multiformats/go-varint v0.0.7
 )
 
 require (
@@ -35,16 +34,6 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
-	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
-	github.com/minio/sha256-simd v1.0.0 // indirect
-	github.com/mr-tron/base58 v1.2.0 // indirect
-	github.com/multiformats/go-base32 v0.0.3 // indirect
-	github.com/multiformats/go-base36 v0.1.0 // indirect
-	github.com/multiformats/go-multihash v0.2.1 // indirect
-	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	golang.org/x/crypto v0.0.0-20220829220503-c86fa9a7ed90 // indirect
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f // indirect
 	golang.org/x/text v0.3.8 // indirect
-	golang.org/x/time v0.3.0 // indirect
-	lukechampine.com/blake3 v1.1.6 // indirect
 )

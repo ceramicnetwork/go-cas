@@ -7,17 +7,15 @@ import (
 )
 
 type AnchorRequestMessage struct {
-	Id         uuid.UUID   `json:"rid"`
-	StreamId   string      `json:"sid"`
-	Cid        string      `json:"cid"`
-	UpdatedAt  time.Time   `json:"ts"`
-	Attempt    *int        `json:"att,omitempty"`
-	GenesisCid *string     `json:"gid,omitempty"`
-	StreamType *StreamType `json:"st,omitempty"`
+	Id        uuid.UUID       `json:"rid"`
+	StreamId  string          `json:"sid"`
+	Cid       string          `json:"cid"`
+	Timestamp time.Time       `json:"ts"`
+	Metadata  *StreamMetadata `json:"mta,omitempty"`
+	CreatedAt time.Time
 }
 
-type RequestStatusMessage struct {
-	Id      uuid.UUID `json:"rid"`
-	Attempt int       `json:"att"`
-	Loaded  bool      `json:"ld"`
+type AnchorBatchMessage struct {
+	Id  uuid.UUID   `json:"bid"`
+	Ids []uuid.UUID `json:"rids"`
 }

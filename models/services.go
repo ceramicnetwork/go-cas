@@ -8,22 +8,20 @@ import (
 )
 
 type AnchorRepository interface {
-	GetRequests(RequestStatus, time.Time, time.Time, []string, int) ([]*AnchorRequestMessage, error)
+	GetRequests(RequestStatus, time.Time, int) ([]*AnchorRequestMessage, error)
 	UpdateStatus(uuid.UUID, RequestStatus, string) error
 }
 
 type StateRepository interface {
 	GetCheckpoint(CheckpointType) (time.Time, error)
 	UpdateCheckpoint(CheckpointType, time.Time) (bool, error)
-	UpdateCid(*StreamCid) error
-	GetStreamTip(string) (*StreamCid, error)
+	StoreCid(*StreamCid) (bool, error)
+	GetCid(string, string) (*StreamCid, error)
+	GetTipCid(string) (*StreamCid, error)
+	UpdateAnchorTs(string, string, time.Time) (bool, error)
+	GetAnchoredCid(string, string) (*StreamCid, error)
 }
 
 type QueuePublisher interface {
 	SendMessage(ctx context.Context, event any) (string, error)
-}
-
-type CeramicClient interface {
-	Pin(context.Context, *CeramicPin) error
-	Query(context.Context, *CeramicQuery) (*StreamState, error)
 }
