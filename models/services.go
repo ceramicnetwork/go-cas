@@ -25,3 +25,7 @@ type StateRepository interface {
 type QueuePublisher interface {
 	SendMessage(ctx context.Context, event any) (string, error)
 }
+
+type Notifier interface {
+	SendAlert(string, string) error
+}

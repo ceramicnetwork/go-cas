@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/ceramicnetwork/go-cas/common/db"
+	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/common/queue"
 	"github.com/ceramicnetwork/go-cas/common/utils"
 	"github.com/ceramicnetwork/go-cas/models"
@@ -48,6 +49,11 @@ func main() {
 	}
 	stateDb := db.NewStateDb(dbAwsCfg)
 
+	discordHandler, err := notifs.NewDiscordHandler()
+	if err != nil {
+		log.Fatalf("failed to create discord handler: %v", err)
+	}
+
 	// Flow:
 	// ====
 	// 1. Request polling service:
@@ -60,24 +66,46 @@ func main() {
 	//	- Read requests from Ready queue
 	//  - Accumulate requests until either batch is full or time runs out
 	//  - Post batches to Batch queue
+	// 4. Failure handling service:
+	//  - Monitor the DLQ
+	//  - Raise Discord alert for messages dropping through to the DLQ
 
 	// HTTP clients
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Queue publishers
-	validateQueue, err := queue.NewPublisher(models.QueueType_Validate, sqsClient)
+
+	// Create the DLQ and prepare the redrive policy for the other queues
+	deadLetterQueue, err := queue.NewPublisher(models.QueueType_DLQ, sqsClient, nil)
+	if err != nil {
+		log.Fatalf("failed to create dead-letter queue: %v", err)
+	}
+	dlqArn, err := utils.GetQueueArn(deadLetterQueue.QueueUrl, sqsClient)
+	if err != nil {
+		log.Fatalf("failed to fetch dead-letter queue arn: %v", err)
+	}
+	redrivePolicy := &models.QueueRedrivePolicy{
+		DeadLetterTargetArn: dlqArn,
+		MaxReceiveCount:     models.QueueMaxReceiveCount,
+	}
+	validateQueue, err := queue.NewPublisher(models.QueueType_Validate, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create validate queue: %v", err)
 	}
-	readyQueue, err := queue.NewPublisher(models.QueueType_Ready, sqsClient)
+	readyQueue, err := queue.NewPublisher(models.QueueType_Ready, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create ready queue: %v", err)
 	}
-	batchQueue, err := queue.NewPublisher(models.QueueType_Batch, sqsClient)
+	batchQueue, err := queue.NewPublisher(models.QueueType_Batch, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create batch queue: %v", err)
 	}
-
+	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
+	// failures could put messages back in the DLQ that are then re-consumed by the handler.
+	failureQueue, err := queue.NewPublisher(models.QueueType_Failure, sqsClient, redrivePolicy)
+	if err != nil {
+		log.Fatalf("failed to create failure queue: %v", err)
+	}
 	// Start the queue consumers. These consumers will be responsible for scaling event processing up based on load, and
 	// also maintaining backpressure on the queues.
 
@@ -88,6 +116,11 @@ func main() {
 	// The Validation Service reads from the Validate queue and posts to the Ready queue
 	validationService := services.NewValidationService(stateDb, readyQueue)
 	queue.NewConsumer(validateQueue, validationService.Validate).Start()
+
+	// The Failure handling Service reads from the Failure and Dead-Letter queues
+	failureHandlingService := services.NewFailureHandlingService(discordHandler)
+	queue.NewConsumer(failureQueue, failureHandlingService.Failure).Start()
+	queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ).Start()
 
 	// Start the polling services last
 	wg := sync.WaitGroup{}
