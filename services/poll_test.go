@@ -41,13 +41,13 @@ func (f *StubStateRepository) UpdateCheckpoint(checkpointType models.CheckpointT
 	return true, nil
 }
 
-type FakeQueuePublisher struct {
+type FakeReadyPublisher struct {
 	messages    chan any
 	numAttempts int
 	errorOn     int
 }
 
-func (f *FakeQueuePublisher) SendMessage(ctx context.Context, event any) (string, error) {
+func (f *FakeReadyPublisher) SendMessage(ctx context.Context, event any) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", errors.New("context cancelled")
@@ -75,22 +75,22 @@ func waitForMesssages(messageChannel chan any, n int) []any {
 
 func TestPoller(t *testing.T) {
 	tests := map[string]struct {
-		queuePublisher            *FakeQueuePublisher
+		readyPublisher            *FakeReadyPublisher
 		expectedCheckpoints       []time.Time
 		expectedCurrentCheckpoint time.Time
 	}{
 		"Can poll": {
-			queuePublisher:            &FakeQueuePublisher{messages: make(chan any, 4)},
+			readyPublisher:            &FakeReadyPublisher{messages: make(chan any, 4)},
 			expectedCheckpoints:       []time.Time{originalCheckpoint, originalCheckpoint.Add(time.Minute * 2)},
 			expectedCurrentCheckpoint: originalCheckpoint.Add(time.Minute * time.Duration(4)),
 		},
 		"Can poll when publishing initially failed": {
-			queuePublisher:            &FakeQueuePublisher{messages: make(chan any, 4), errorOn: 1},
+			readyPublisher:            &FakeReadyPublisher{messages: make(chan any, 4), errorOn: 1},
 			expectedCheckpoints:       []time.Time{originalCheckpoint, originalCheckpoint.Add(time.Minute).Add(-time.Millisecond), originalCheckpoint.Add(-time.Millisecond).Add(time.Minute * 3)},
 			expectedCurrentCheckpoint: originalCheckpoint.Add(-time.Millisecond).Add(time.Minute * 5),
 		},
 		"Can poll when publishing failed on middle request": {
-			queuePublisher:            &FakeQueuePublisher{messages: make(chan any, 4), errorOn: 2},
+			readyPublisher:            &FakeReadyPublisher{messages: make(chan any, 4), errorOn: 2},
 			expectedCheckpoints:       []time.Time{originalCheckpoint, originalCheckpoint.Add(time.Minute), originalCheckpoint.Add(time.Minute * 3)},
 			expectedCurrentCheckpoint: originalCheckpoint.Add(time.Minute * 5),
 		},
@@ -101,7 +101,7 @@ func TestPoller(t *testing.T) {
 			anchorRepo := &SpyAnchorRepository{}
 			stateRepo := &StubStateRepository{checkpoint: originalCheckpoint}
 
-			rp := NewRequestPoller(anchorRepo, stateRepo, test.queuePublisher)
+			rp := NewRequestPoller(anchorRepo, stateRepo, test.readyPublisher)
 
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
@@ -111,7 +111,7 @@ func TestPoller(t *testing.T) {
 				rp.Run(ctx)
 			}()
 
-			waitForMesssages(test.queuePublisher.messages, 4)
+			waitForMesssages(test.readyPublisher.messages, 4)
 			cancel()
 			wg.Wait()
 
