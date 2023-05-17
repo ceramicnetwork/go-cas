@@ -14,19 +14,16 @@ https://lucid.app/documents/view/9fb65517-add6-48f5-a35b-e8c5835a9762
 
 ### Major
 
-- [ ] Implement failure handling service
 - [ ] Prepare Anchor Worker code to accept batches
 - [ ] Prepare Anchor Worker code to post anchor results to a queue
 - [ ] Graceful shutdown
 - [ ] Terraform for deployments
-- [ ] Implement [dead-letter queue (DLQ)](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
 - [ ] Metrics
 - [ ] Unit tests (backward compatibility tests?)
 - [ ] Performance tests
 
 ### Minor
 
-- [ ] Test against local infra, e.g. [Localstack](https://localstack.cloud/)
 - [ ] CI/CD
 - [ ] Clarify contexts being used in various spots - operation ctx vs. server ctx
 
