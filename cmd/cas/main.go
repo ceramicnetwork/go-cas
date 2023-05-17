@@ -75,33 +75,33 @@ func main() {
 	// Queue publishers
 
 	// Create the DLQ and prepare the redrive policy for the other queues
-	deadLetterQueue, err := queue.NewPublisher(aws.QueueType_DLQ, sqsClient, nil)
+	deadLetterQueue, err := queue.NewPublisher(queue.QueueType_DLQ, sqsClient, nil)
 	if err != nil {
 		log.Fatalf("failed to create dead-letter queue: %v", err)
 	}
-	dlqArn, err := aws.GetQueueArn(deadLetterQueue.QueueUrl, sqsClient)
+	dlqArn, err := queue.GetQueueArn(deadLetterQueue.QueueUrl, sqsClient)
 	if err != nil {
 		log.Fatalf("failed to fetch dead-letter queue arn: %v", err)
 	}
-	redrivePolicy := &aws.QueueRedrivePolicy{
+	redrivePolicy := &queue.QueueRedrivePolicy{
 		DeadLetterTargetArn: dlqArn,
-		MaxReceiveCount:     aws.QueueMaxReceiveCount,
+		MaxReceiveCount:     queue.QueueMaxReceiveCount,
 	}
-	validateQueue, err := queue.NewPublisher(aws.QueueType_Validate, sqsClient, redrivePolicy)
+	validateQueue, err := queue.NewPublisher(queue.QueueType_Validate, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create validate queue: %v", err)
 	}
-	readyQueue, err := queue.NewPublisher(aws.QueueType_Ready, sqsClient, redrivePolicy)
+	readyQueue, err := queue.NewPublisher(queue.QueueType_Ready, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create ready queue: %v", err)
 	}
-	batchQueue, err := queue.NewPublisher(aws.QueueType_Batch, sqsClient, redrivePolicy)
+	batchQueue, err := queue.NewPublisher(queue.QueueType_Batch, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create batch queue: %v", err)
 	}
 	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
 	// failures could put messages back in the DLQ that are then re-consumed by the handler.
-	failureQueue, err := queue.NewPublisher(aws.QueueType_Failure, sqsClient, redrivePolicy)
+	failureQueue, err := queue.NewPublisher(queue.QueueType_Failure, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create failure queue: %v", err)
 	}

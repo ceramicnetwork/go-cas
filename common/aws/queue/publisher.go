@@ -7,8 +7,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/abevier/go-sqs/gosqs"
-
-	"github.com/ceramicnetwork/go-cas/common/aws"
 )
 
 type Publisher struct {
@@ -16,9 +14,9 @@ type Publisher struct {
 	publisher *gosqs.SQSPublisher
 }
 
-func NewPublisher(queueType aws.QueueType, sqsClient *sqs.Client, redrivePolicy *aws.QueueRedrivePolicy) (*Publisher, error) {
+func NewPublisher(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *QueueRedrivePolicy) (*Publisher, error) {
 	// Create the queue if it didn't already exist
-	if queueUrl, err := aws.CreateQueue(queueType, sqsClient, redrivePolicy); err != nil {
+	if queueUrl, err := CreateQueue(queueType, sqsClient, redrivePolicy); err != nil {
 		return nil, err
 	} else {
 		return &Publisher{
@@ -26,7 +24,7 @@ func NewPublisher(queueType aws.QueueType, sqsClient *sqs.Client, redrivePolicy 
 			gosqs.NewPublisher(
 				sqsClient,
 				queueUrl,
-				aws.QueueMaxLinger,
+				QueueMaxLinger,
 			)}, nil
 	}
 }
