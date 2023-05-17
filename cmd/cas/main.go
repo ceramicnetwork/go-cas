@@ -9,11 +9,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
+	"github.com/ceramicnetwork/go-cas/common/aws"
 	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/common/queue"
-	"github.com/ceramicnetwork/go-cas/common/utils"
-	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/ceramicnetwork/go-cas/services"
 )
 
@@ -23,7 +22,7 @@ func main() {
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	awsCfg, err := utils.AwsConfig()
+	awsCfg, err := aws.AwsConfig()
 	if err != nil {
 		log.Fatalf("newCeramicLoader: error creating aws cfg: %v", err)
 	}
@@ -42,7 +41,7 @@ func main() {
 	stateDbEndpoint := os.Getenv("DB_AWS_ENDPOINT")
 	if len(stateDbEndpoint) > 0 {
 		log.Printf("using custom state db endpoint: %s", stateDbEndpoint)
-		dbAwsCfg, err = utils.AwsConfigWithOverride(stateDbEndpoint)
+		dbAwsCfg, err = aws.AwsConfigWithOverride(stateDbEndpoint)
 		if err != nil {
 			log.Fatalf("failed to create aws cfg: %v", err)
 		}
@@ -76,33 +75,33 @@ func main() {
 	// Queue publishers
 
 	// Create the DLQ and prepare the redrive policy for the other queues
-	deadLetterQueue, err := queue.NewPublisher(models.QueueType_DLQ, sqsClient, nil)
+	deadLetterQueue, err := queue.NewPublisher(aws.QueueType_DLQ, sqsClient, nil)
 	if err != nil {
 		log.Fatalf("failed to create dead-letter queue: %v", err)
 	}
-	dlqArn, err := utils.GetQueueArn(deadLetterQueue.QueueUrl, sqsClient)
+	dlqArn, err := aws.GetQueueArn(deadLetterQueue.QueueUrl, sqsClient)
 	if err != nil {
 		log.Fatalf("failed to fetch dead-letter queue arn: %v", err)
 	}
-	redrivePolicy := &models.QueueRedrivePolicy{
+	redrivePolicy := &aws.QueueRedrivePolicy{
 		DeadLetterTargetArn: dlqArn,
-		MaxReceiveCount:     models.QueueMaxReceiveCount,
+		MaxReceiveCount:     aws.QueueMaxReceiveCount,
 	}
-	validateQueue, err := queue.NewPublisher(models.QueueType_Validate, sqsClient, redrivePolicy)
+	validateQueue, err := queue.NewPublisher(aws.QueueType_Validate, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create validate queue: %v", err)
 	}
-	readyQueue, err := queue.NewPublisher(models.QueueType_Ready, sqsClient, redrivePolicy)
+	readyQueue, err := queue.NewPublisher(aws.QueueType_Ready, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create ready queue: %v", err)
 	}
-	batchQueue, err := queue.NewPublisher(models.QueueType_Batch, sqsClient, redrivePolicy)
+	batchQueue, err := queue.NewPublisher(aws.QueueType_Batch, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create batch queue: %v", err)
 	}
 	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
 	// failures could put messages back in the DLQ that are then re-consumed by the handler.
-	failureQueue, err := queue.NewPublisher(models.QueueType_Failure, sqsClient, redrivePolicy)
+	failureQueue, err := queue.NewPublisher(aws.QueueType_Failure, sqsClient, redrivePolicy)
 	if err != nil {
 		log.Fatalf("failed to create failure queue: %v", err)
 	}
