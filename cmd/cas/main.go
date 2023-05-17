@@ -10,9 +10,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/ceramicnetwork/go-cas/common/aws"
+	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
-	"github.com/ceramicnetwork/go-cas/common/queue"
 	"github.com/ceramicnetwork/go-cas/services"
 )
 
