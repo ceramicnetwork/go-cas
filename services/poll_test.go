@@ -27,16 +27,16 @@ func (f *SpyAnchorRepository) GetRequests(status models.RequestStatus, since tim
 	}, nil
 }
 
-type StubStateRepository struct {
+type SpyStateRepository struct {
 	models.StateRepository
 	checkpoint time.Time
 }
 
-func (f *StubStateRepository) GetCheckpoint(CheckpointType models.CheckpointType) (time.Time, error) {
+func (f *SpyStateRepository) GetCheckpoint(CheckpointType models.CheckpointType) (time.Time, error) {
 	return f.checkpoint, nil
 }
 
-func (f *StubStateRepository) UpdateCheckpoint(checkpointType models.CheckpointType, time time.Time) (bool, error) {
+func (f *SpyStateRepository) UpdateCheckpoint(checkpointType models.CheckpointType, time time.Time) (bool, error) {
 	f.checkpoint = time
 	return true, nil
 }
@@ -99,10 +99,11 @@ func TestPoller(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			anchorRepo := &SpyAnchorRepository{}
-			stateRepo := &StubStateRepository{checkpoint: originalCheckpoint}
+			stateRepo := &SpyStateRepository{checkpoint: originalCheckpoint}
 
 			rp := NewRequestPoller(anchorRepo, stateRepo, test.readyPublisher)
 
+			// T0 request poller starts
 			ctx, cancel := context.WithCancel(context.Background())
 			var wg sync.WaitGroup
 			wg.Add(1)
@@ -111,14 +112,22 @@ func TestPoller(t *testing.T) {
 				rp.Run(ctx)
 			}()
 
+			// a. publisher attempts to publish request. If the publisher errors (indicated by errorOn field set), it only sends requests that were successful.
+			//	 0-2 messages could have been sent
+			// b. sleep for 1s
+			// c. publisher publishes 2 requests
+			// repeat b + c until 4 messages are published in total
+			// cancel which gracefully shutdowns the poller before the next run, wait for graceful shutdown to complete
 			waitForMesssages(test.readyPublisher.messages, 4)
 			cancel()
 			wg.Wait()
 
+			// the poller should have ran 2-3 times. 3 times if there was an error because one of the runs published <2 messages
 			if !reflect.DeepEqual(anchorRepo.receivedCheckpoints, test.expectedCheckpoints) {
 				t.Errorf("incorrect checkpoints used: expected %v, got %v", test.expectedCheckpoints, anchorRepo.receivedCheckpoints)
 			}
 
+			// the most recent checkpoint should be the CreatedAt time of the last received message
 			if stateRepo.checkpoint != test.expectedCurrentCheckpoint {
 				t.Errorf("incorrect current checkpoint: expected %v, got %v", test.expectedCurrentCheckpoint, stateRepo.checkpoint)
 			}
