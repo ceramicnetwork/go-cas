@@ -11,10 +11,4 @@ const DefaultHttpWaitTime = 10 * time.Second
 const DefaultAnchorBatchSize = 1024
 const DefaultAnchorBatchLinger = 12 * time.Hour
 
-type QueueType string
-
-const (
-	QueueType_Validate QueueType = "validate"
-	QueueType_Ready    QueueType = "ready"
-	QueueType_Batch    QueueType = "batch"
-)
+const ServiceName = "cas-scheduler"
