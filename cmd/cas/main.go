@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"sync"
@@ -125,6 +126,6 @@ func main() {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	// Poll from Anchor DB and post to the Validate queue to kick-off processing
-	go services.NewRequestPoller(anchorDb, stateDb, validateQueue).Run()
+	go services.NewRequestPoller(anchorDb, stateDb, validateQueue).Run(context.Background())
 	wg.Wait()
 }
