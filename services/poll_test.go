@@ -2,95 +2,32 @@ package services
 
 import (
 	"context"
-	"errors"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/ceramicnetwork/go-cas/models"
 )
 
 var originalCheckpoint = time.Now().Add(-time.Hour)
 
-type SpyAnchorRepository struct {
-	models.AnchorRepository
-	receivedCheckpoints []time.Time
-}
-
-func (f *SpyAnchorRepository) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
-	f.receivedCheckpoints = append(f.receivedCheckpoints, since)
-
-	return []*models.AnchorRequestMessage{
-		{CreatedAt: since.Add(time.Minute * 1)},
-		{CreatedAt: since.Add(time.Minute * 2)},
-	}, nil
-}
-
-type SpyStateRepository struct {
-	models.StateRepository
-	checkpoint time.Time
-}
-
-func (f *SpyStateRepository) GetCheckpoint(CheckpointType models.CheckpointType) (time.Time, error) {
-	return f.checkpoint, nil
-}
-
-func (f *SpyStateRepository) UpdateCheckpoint(checkpointType models.CheckpointType, time time.Time) (bool, error) {
-	f.checkpoint = time
-	return true, nil
-}
-
-type FakeReadyPublisher struct {
-	messages    chan any
-	numAttempts int
-	errorOn     int
-}
-
-func (f *FakeReadyPublisher) SendMessage(ctx context.Context, event any) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", errors.New("context cancelled")
-	default:
-		f.numAttempts = f.numAttempts + 1
-		if f.numAttempts == f.errorOn {
-			return "", errors.New("TestError")
-		}
-		f.messages <- event
-		return "msgId", nil
-	}
-
-}
-
-func waitForMesssages(messageChannel chan any, n int) []any {
-	messages := make([]any, n)
-	for i := 0; i < n; i++ {
-		message := <-messageChannel
-		messages[i] = message
-	}
-	return messages
-}
-
-// if no requests do not publish anything and try again after a second
-
 func TestPoller(t *testing.T) {
 	tests := map[string]struct {
-		readyPublisher            *FakeReadyPublisher
+		readyPublisher            *FakePublisher
 		expectedCheckpoints       []time.Time
 		expectedCurrentCheckpoint time.Time
 	}{
 		"Can poll": {
-			readyPublisher:            &FakeReadyPublisher{messages: make(chan any, 4)},
+			readyPublisher:            &FakePublisher{messages: make(chan any, 4)},
 			expectedCheckpoints:       []time.Time{originalCheckpoint, originalCheckpoint.Add(time.Minute * 2)},
 			expectedCurrentCheckpoint: originalCheckpoint.Add(time.Minute * time.Duration(4)),
 		},
 		"Can poll when publishing initially failed": {
-			readyPublisher:            &FakeReadyPublisher{messages: make(chan any, 4), errorOn: 1},
+			readyPublisher:            &FakePublisher{messages: make(chan any, 4), errorOn: 1},
 			expectedCheckpoints:       []time.Time{originalCheckpoint, originalCheckpoint.Add(time.Minute).Add(-time.Millisecond), originalCheckpoint.Add(-time.Millisecond).Add(time.Minute * 3)},
 			expectedCurrentCheckpoint: originalCheckpoint.Add(-time.Millisecond).Add(time.Minute * 5),
 		},
 		"Can poll when publishing failed on middle request": {
-			readyPublisher:            &FakeReadyPublisher{messages: make(chan any, 4), errorOn: 2},
+			readyPublisher:            &FakePublisher{messages: make(chan any, 4), errorOn: 2},
 			expectedCheckpoints:       []time.Time{originalCheckpoint, originalCheckpoint.Add(time.Minute), originalCheckpoint.Add(time.Minute * 3)},
 			expectedCurrentCheckpoint: originalCheckpoint.Add(time.Minute * 5),
 		},
@@ -99,7 +36,7 @@ func TestPoller(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			anchorRepo := &SpyAnchorRepository{}
-			stateRepo := &SpyStateRepository{checkpoint: originalCheckpoint}
+			stateRepo := &FakeStateRepository{checkpoint: originalCheckpoint}
 
 			rp := NewRequestPoller(anchorRepo, stateRepo, test.readyPublisher)
 

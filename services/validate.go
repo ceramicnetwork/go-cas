@@ -28,7 +28,8 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 		Timestamp: anchorReq.Timestamp,
 	}
 	if stored, err := v.stateDb.StoreCid(&streamCid); err != nil {
-		log.Printf("validate: failed to send message: %v, %v", anchorReq, err)
+		log.Printf("validate: failed to store message: %v, %v", anchorReq, err)
+		return err
 	} else if stored {
 		// Only post the request to the Ready queue if the CID didn't already exist in the DB
 		if _, err = v.readyPublisher.SendMessage(ctx, anchorReq); err != nil {
