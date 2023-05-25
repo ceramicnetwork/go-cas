@@ -3,7 +3,7 @@ version: '3.4'
 services:
   cas:
     build:
-      context: .
+      context: ../go-cas
       args:
         ENV_TAG: dev
     container_name: go_cas
@@ -21,54 +21,16 @@ services:
       - PG_PASSWORD=root
       - PG_DB=anchor_db
       - ENV=dev
-      - ANCHOR_BATCH_SIZE=2
+      - ANCHOR_BATCH_SIZE=1
     depends_on:
-      - localstack
-      - database
+      localstack:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+      cas_api:
+        condition: service_healthy
     volumes:
       - '/var/run/docker.sock:/var/run/docker.sock'
-    networks:
-      - internal
-
-  cas_api:
-    image: ceramicnetwork/ceramic-anchor-service:release-candidate
-    container_name: cas_api
-    restart: on-failure
-    environment:
-      - NODE_ENV=dev
-      - APP_MODE=server
-      - APP_PORT=8081
-      - ANCHOR_CONTROLLER_ENABLED=false
-      - ANCHOR_EXPIRATION_PERIOD=0
-      - ANCHOR_SCHEDULE_EXPRESSION=0/1 * * * ? *
-      - BLOCKCHAIN_CONNECTOR=ethereum
-      - CERAMIC_API_URL=http://host.docker.internal:7007
-      - ETH_GAS_LIMIT=4712388
-      - ETH_GAS_PRICE=100000000000
-      - ETH_NETWORK=ganache
-      - ETH_RPC_URL=http://ganache:8545
-      - ETH_OVERRIDE_GAS_CONFIG=false
-      - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
-      - ETH_CONTRACT_ADDRESS=0x663F90C8A3B4dA654e2d23b6564426FEDa684c8F
-      - IPFS_API_URL=http://ipfs:5001
-      - IPFS_API_TIMEOUT=120000
-      - LOG_LEVEL=debug
-      - LOG_TO_FILES=true
-      - LOG_PATH=/usr/local/var/log
-      - MERKLE_DEPTH_LIMIT=0
-      - DB_NAME=anchor_db
-      - DB_HOST=database
-      - DB_PORT=5432
-      - DB_USERNAME=root
-      - DB_PASSWORD=root
-      - VALIDATE_RECORDS=false
-    depends_on:
-      - ipfs
-      - database
-    ports:
-      - '8081:8081'
-    volumes:
-      - './migrations:/cas/migrations'
     networks:
       - internal
 
@@ -86,8 +48,8 @@ services:
       - ANCHOR_CONTROLLER_ENABLED=false
       - INCLUDE_BLOCK_INFO_IN_ANCHOR_PROOF=false
       - MERKLE_DEPTH_LIMIT=0
-      - MIN_STREAM_COUNT=2
-      - IPFS_API_URL=http://ipfs:5001
+      - MIN_STREAM_COUNT=1
+      - IPFS_API_URL=http://cas_ipfs:5001
       - IPFS_PUBSUB_TOPIC=/steph
       - IPFS_API_TIMEOUT=60000
       - IPFS_CONCURRENT_GET_LIMIT=100
@@ -96,8 +58,8 @@ services:
       - ETH_OVERRIDE_GAS_CONFIG=false
       - ETH_GAS_LIMIT=6721975
       - ETH_RPC_URL=http://ganache:8545
-      - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
-      - ETH_CONTRACT_ADDRESS=0x663F90C8A3B4dA654e2d23b6564426FEDa684c8F
+      - ETH_WALLET_PK=0x06dd0990d19001c57eeea6d32e8fdeee40d3945962caf18c18c3930baa5a6ec9
+      - ETH_CONTRACT_ADDRESS=0xd3f84cf6be3dd0eb16dc89c972f7a27b441a39f2
       - LOG_LEVEL=debug
       - LOG_TO_FILES=true
       - LOG_PATH=/usr/local/var/log
@@ -113,26 +75,71 @@ services:
       - AWS_ACCESS_KEY_ID=.
       - AWS_SECRET_ACCESS_KEY=.
     depends_on:
-      - ipfs
+      - cas_ipfs
       - database
       - localstack
       - cas_api
       - launch_contract
       - ganache
       - cas
-    volumes:
-      - './migrations:/cas/migrations'
     networks:
       - internal
     deploy:
       mode: replicated
-      replicas: 2
+      replicas: 1
 
-  ipfs:
+  cas_api:
+    image: ceramicnetwork/ceramic-anchor-service:release-candidate
+    container_name: cas_api
+    environment:
+      - NODE_ENV=dev
+      - APP_MODE=server
+      - APP_PORT=8081
+      - ANCHOR_CONTROLLER_ENABLED=false
+      - ANCHOR_EXPIRATION_PERIOD=0
+      - ANCHOR_SCHEDULE_EXPRESSION=0/1 * * * ? *
+      - BLOCKCHAIN_CONNECTOR=ethereum
+      - ETH_GAS_LIMIT=4712388
+      - ETH_GAS_PRICE=100000000000
+      - ETH_NETWORK=ganache
+      - ETH_RPC_URL=http://ganache:8545
+      - ETH_OVERRIDE_GAS_CONFIG=false
+      - ETH_WALLET_PK=0x06dd0990d19001c57eeea6d32e8fdeee40d3945962caf18c18c3930baa5a6ec9
+      - ETH_CONTRACT_ADDRESS=0xd3f84cf6be3dd0eb16dc89c972f7a27b441a39f2
+      - IPFS_API_URL=http://cas_ipfs:5001
+      - IPFS_API_TIMEOUT=120000
+      - LOG_LEVEL=debug
+      - LOG_TO_FILES=true
+      - LOG_PATH=/usr/local/var/log
+      - MERKLE_DEPTH_LIMIT=0
+      - DB_NAME=anchor_db
+      - DB_HOST=database
+      - DB_PORT=5432
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+      - VALIDATE_RECORDS=false
+    depends_on:
+      cas_ipfs:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    ports:
+      - '8081:8081'
+    networks:
+      - internal
+    healthcheck:
+      test: ['CMD', 'curl', 'http://localhost:8081/api/v0/healthcheck']
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
+
+  cas_ipfs:
     image: ceramicnetwork/go-ipfs-daemon
-    container_name: ipfs
+    container_name: cas_ipfs
     ports:
       - '5001:5001'
+      - '8111:8011'
     networks:
       - internal
 
@@ -147,6 +154,11 @@ services:
       - '5432:5432'
     networks:
       - internal
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready', '-d', 'anchor_db', '-U', 'root']
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   localstack:
     image: localstack/localstack
@@ -158,14 +170,32 @@ services:
       - SERVICES=sqs,dynamodb
     networks:
       - internal
+    healthcheck:
+      test:
+        - CMD
+        - bash
+        - -c
+        - awslocal dynamodb list-tables
+          && awslocal es list-domain-names
+          && awslocal s3 ls
+          && awslocal sqs list-queues
+      interval: 5s
+      timeout: 10s
+      start_period: 10s
 
   ganache:
     image: trufflesuite/ganache
     container_name: ganache
     ports:
       - '8545:8545'
-    command:
-      - "--mnemonic='move sense much taxi wave hurry recall stairs thank brother nut woman' --networkId=5777 --hostname=0.0.0.0 -l=80000000"
+    entrypoint:
+      - node
+      - /app/dist/node/cli.js
+      - --miner.blockTime=5
+      - --mnemonic='move sense much taxi wave hurry recall stairs thank brother nut woman'
+      - --networkId=5777
+      - --hostname=0.0.0.0
+      - -l=80000000
     networks:
       - internal
 
@@ -176,9 +206,39 @@ services:
     container_name: contract
     environment:
       - ETH_RPC_URL=http://ganache:8545
-      - ETH_WALLET_PK=0xbf873129c72676a8ae3be570c5d6346a5722e7ebac57ed8d08dfd3d1467d6dd6
+      - ETH_WALLET_PK=0x06dd0990d19001c57eeea6d32e8fdeee40d3945962caf18c18c3930baa5a6ec9
     depends_on:
       - ganache
+    networks:
+      - internal
+
+  remote_ceramic:
+    image: ceramicnetwork/js-ceramic:latest
+    container_name: remote_ceramic
+    ports:
+      - 7007:7007
+      - 4011:4011
+      - 4012:4012
+      - 5011:5011
+      - 9011:9011
+      - 8011:8011
+    depends_on:
+      cas_api:
+        condition: service_healthy
+      ganache:
+        condition: service_started
+    entrypoint: ''
+    command: >
+      /bin/bash -c "
+        cd packages/cli
+        ./bin/ceramic.js daemon --port 7007 --network local --anchor-service-api http://cas_api:8081 --ethereum-rpc http://ganache:8545 --pubsubTopic integration-tests-docker
+      "
+    healthcheck:
+      test: ['CMD', 'curl', 'http://localhost:7007']
+      interval: 10s
+      retries: 5
+      start_period: 30s
+      timeout: 10s
     networks:
       - internal
 
