@@ -82,6 +82,8 @@ services:
       - launch_contract
       - ganache
       - cas
+    volumes:
+      - './migrations:/cas/migrations'
     networks:
       - internal
     deploy:
@@ -123,6 +125,8 @@ services:
         condition: service_healthy
       database:
         condition: service_healthy
+    volumes:
+      - './migrations:/cas/migrations'
     ports:
       - '8081:8081'
     networks:
