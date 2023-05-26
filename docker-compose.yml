@@ -82,8 +82,6 @@ services:
       - launch_contract
       - ganache
       - cas
-    volumes:
-      - './migrations:/cas/migrations'
     networks:
       - internal
     deploy:
@@ -125,8 +123,6 @@ services:
         condition: service_healthy
       database:
         condition: service_healthy
-    volumes:
-      - './migrations:/cas/migrations'
     ports:
       - '8081:8081'
     networks:
@@ -239,7 +235,7 @@ services:
       "
     healthcheck:
       test: ['CMD', 'curl', 'http://localhost:7007']
-      interval: 10s
+      interval: 20s
       retries: 5
       start_period: 30s
       timeout: 10s
