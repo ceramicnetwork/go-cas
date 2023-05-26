@@ -1,0 +1,32 @@
+version: '3.4'
+
+services:
+  e2e_tests:
+    build:
+      context: ../ceramic-integration-tests
+    container_name: e2e_tests
+    environment:
+      - NODE_ENV=docker
+      - REPORT_STATUS=false
+      - EXPORT_LOGS=false
+      - ANCHOR_API_URL=http://cas_api:8081
+      - ETH_RPC_URL=http://ganache:8545
+      - IPFS_URL=http://ceramic1_ipfs:5001
+      - REMOTE_CERAMIC_URL=http://remote_ceramic:7007
+      - PUBSUB_TOPIC=integration-tests-docker
+    depends_on:
+      remote_ceramic:
+        condition: service_healthy
+      ceramic1_ipfs:
+        condition: service_healthy
+    networks:
+      - internal
+
+  ceramic1_ipfs:
+    image: ceramicnetwork/go-ipfs-daemon
+    container_name: ceramic1_ipfs
+    ports:
+      - '5101:5001'
+      - '8211:8011'
+    networks:
+      - internal
