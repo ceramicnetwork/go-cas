@@ -5,7 +5,7 @@ go 1.18
 //replace github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567 => ../go-sqs
 
 require (
-	github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567
+	github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3
 	github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
