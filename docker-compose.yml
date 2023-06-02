@@ -21,7 +21,8 @@ services:
       - PG_PASSWORD=root
       - PG_DB=anchor_db
       - ENV=dev
-      - ANCHOR_BATCH_SIZE=1
+      - ANCHOR_BATCH_SIZE=4
+      - ANCHOR_BATCH_LINGER=5m
     depends_on:
       localstack:
         condition: service_healthy
@@ -50,7 +51,7 @@ services:
       - MERKLE_DEPTH_LIMIT=0
       - MIN_STREAM_COUNT=1
       - IPFS_API_URL=http://cas_ipfs:5001
-      - IPFS_PUBSUB_TOPIC=/steph
+      - IPFS_PUBSUB_TOPIC=/integration-tests-docker
       - IPFS_API_TIMEOUT=60000
       - IPFS_CONCURRENT_GET_LIMIT=100
       - BLOCKCHAIN_CONNECTOR=ethereum
@@ -68,20 +69,23 @@ services:
       - DB_PORT=5432
       - DB_USERNAME=root
       - DB_PASSWORD=root
-      - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-batch
+      - SQS_URL=http://localstack:4566/000000000000/cas-anchor-dev-batch
       - SQS_QUEUE_USE_POLLING=true
       - AWS_ACCOUNT_ID=000000000000
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=.
       - AWS_SECRET_ACCESS_KEY=.
     depends_on:
-      - cas_ipfs
-      - database
-      - localstack
-      - cas_api
-      - launch_contract
-      - ganache
-      - cas
+      localstack:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+      cas_ipfs:
+        condition: service_healthy
+      cas_api:
+        condition: service_healthy
+      launch_contract:
+        condition: service_completed_successfully
     networks:
       - internal
     deploy:
@@ -123,6 +127,8 @@ services:
         condition: service_healthy
       database:
         condition: service_healthy
+      launch_contract:
+        condition: service_completed_successfully
     ports:
       - '8081:8081'
     networks:
@@ -231,7 +237,7 @@ services:
     command: >
       /bin/bash -c "
         cd packages/cli
-        ./bin/ceramic.js daemon --port 7007 --network local --anchor-service-api http://cas_api:8081 --ethereum-rpc http://ganache:8545 --pubsubTopic integration-tests-docker
+        ./bin/ceramic.js daemon --port 7007 --network local --anchor-service-api http://cas_api:8081 --ethereum-rpc http://ganache:8545 --pubsubTopic /integration-tests-docker
       "
     healthcheck:
       test: ['CMD', 'curl', 'http://localhost:7007']
