@@ -20,9 +20,7 @@ env:
   GH_TOKEN: ${{ secrets.GH_TOKEN }}
   # GitHub
   RUN_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-  STATUS_URL: "https://api.github.com/repos/ceramicnetwork/go-cas/statuses/${{ github.sha }}"
   BRANCH: ${{ github.head_ref || github.ref_name }}
-  SHA: ${{ github.sha }}
 
 jobs:
   build_and_push:
@@ -45,6 +43,7 @@ jobs:
           SHA_TAG=$(git rev-parse --short=12 HEAD)
           echo "SHA=$SHA" >> $GITHUB_ENV
           echo "SHA_TAG=$SHA_TAG" >> $GITHUB_ENV
+          echo "STATUS_URL=https://api.github.com/repos/ceramicnetwork/go-cas/statuses/${{ env.SHA }}" >> $GITHUB_ENV
       -
         name: Set main branch tag
         if: ${{ env.BRANCH == 'main' }}
