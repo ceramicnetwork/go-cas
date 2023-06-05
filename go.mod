@@ -1,6 +1,6 @@
 module github.com/ceramicnetwork/go-cas
 
-go 1.18
+go 1.19
 
 //replace github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567 => ../go-sqs
 
