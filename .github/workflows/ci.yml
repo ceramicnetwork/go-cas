@@ -5,11 +5,6 @@ on:
     branches: [ develop, qa, tnet, main ]
   pull_request: # pull requests
   workflow_dispatch: # manually triggered
-    inputs:
-      environment:
-        description: 'Environment name (one of: dev, qa, tnet, prod)'
-        required: true
-        default: 'dev'
 
 env:
   # Secrets
@@ -65,14 +60,13 @@ jobs:
         run: |
           echo "ENV_TAG=dev" >> $GITHUB_ENV
       -
-        name: Override env tag
-        if: ${{ github.event.inputs.environment != '' }}
-        run: |
-          echo "ENV_TAG=${{ github.event.inputs.environment }}" >> $GITHUB_ENV
-      -
         name: Set commit status "pending"
         run: go run main.go -s pending
         working-directory: ci/cmd/status
+      -
+        name: Run unit tests
+        run: go run main.go -s pending
+        working-directory: ci/cmd/test
       -
         name: Set commit status "success"
         run: go run main.go -s success

@@ -27,8 +27,10 @@ func main() {
 
 func updateCommitStatus(status, statusUrl, targetUrl, ghToken string) error {
 	reqBody, _ := json.Marshal(map[string]string{
-		"state":      status,
-		"target_url": targetUrl,
+		"state":       status,
+		"target_url":  targetUrl,
+		"description": fmt.Sprintf("Image verification %s", status),
+		"context":     "ci/image: verify",
 	})
 	req, err := http.NewRequest("POST", statusUrl, bytes.NewBuffer(reqBody))
 	if err != nil {
