@@ -1,8 +1,6 @@
 package queue
 
-import (
-	"github.com/abevier/go-sqs/gosqs"
-)
+import "github.com/abevier/go-sqs/gosqs"
 
 const consumerMaxWorkers = 100
 const consumerMaxReceiveMessageRequests = 12

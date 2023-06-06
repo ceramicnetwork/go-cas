@@ -12,7 +12,7 @@ import (
 
 	"dagger.io/dagger"
 
-	"github.com/ceramicnetwork/go-cas/common/aws"
+	"github.com/ceramicnetwork/go-cas/common/aws/config"
 )
 
 const EcrUserName = "AWS"
@@ -77,7 +77,7 @@ func pushImage(ctx context.Context, container *dagger.Container, registry string
 }
 
 func getEcrToken(ctx context.Context) string {
-	awsCfg, err := aws.AwsConfig()
+	awsCfg, err := config.AwsConfig()
 	if err != nil {
 		log.Fatalf("build: error creating aws cfg: %v", err)
 	}

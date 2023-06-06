@@ -10,12 +10,13 @@ import (
 
 	"github.com/google/uuid"
 
-	awsCore "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/ceramicnetwork/go-cas/common/aws"
+	"github.com/ceramicnetwork/go-cas/common/aws/config"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 const (
@@ -33,10 +34,10 @@ func createJob(ctx context.Context) error {
 	newJob := map[string]interface{}{
 		"id":    uuid.New().String(),
 		"ts":    time.Now(),
-		"stage": "queued",
-		"type":  "deploy",
+		"stage": models.DefaultJobState,
+		"type":  models.JobType_Deploy,
 		"params": map[string]string{
-			"component": "casv5",
+			"component": models.DeployComponent,
 			"sha":       "latest",
 			"shaTag":    os.Getenv("SHA_TAG"),
 		},
@@ -49,12 +50,12 @@ func createJob(ctx context.Context) error {
 	if err != nil {
 		return err
 	} else {
-		awsCfg, err := aws.AwsConfig()
+		awsCfg, err := config.AwsConfig()
 		if err != nil {
 			return err
 		}
 		_, err = dynamodb.NewFromConfig(awsCfg).PutItem(ctx, &dynamodb.PutItemInput{
-			TableName: awsCore.String(fmt.Sprintf("ceramic-%s-ops", os.Getenv(Env_EnvTag))),
+			TableName: aws.String(fmt.Sprintf("ceramic-%s-ops", os.Getenv(Env_EnvTag))),
 			Item:      attributeValues,
 		})
 		return err

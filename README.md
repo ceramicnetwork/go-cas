@@ -14,29 +14,22 @@ https://lucid.app/documents/view/9fb65517-add6-48f5-a35b-e8c5835a9762
 
 ### Major
 
-- [ ] Prepare Anchor Worker code to accept batches
-- [ ] Prepare Anchor Worker code to post anchor results to a queue
-- [ ] Graceful shutdown
-- [ ] Terraform for deployments
 - [ ] Metrics
-- [ ] Unit tests (backward compatibility tests?)
 - [ ] Performance tests
+- [ ] Clean up logging in `go-sqs` and `go-cas`
+- [ ] Graceful shutdown
+- [ ] Prepare Anchor Worker code to post anchor results to a queue
 
 ### Minor
 
-- [ ] CI/CD
 - [ ] Clarify contexts being used in various spots - operation ctx vs. server ctx
-
-### Starter
-
-- [ ] Use DynamoDB un/marshalling for millisecond resolution checkpoints instead of storing date/time strings (see [pipeline-tools](https://github.com/3box/pipeline-tools/blob/develop/cd/manager/aws/dynamoDb.go#L305)
 
 ### Development
 
-You can run ingegration tests through docker via the following command:
+You can run integration tests through docker via the following command:
 
 ```
 docker-compose -f ./docker-compose.yml -f docker-compose.integration.yml up -d
 ```
 
-This will bring up all the neccesary containers to have the tests run
+This will bring up all the necessary containers to have the tests run.
