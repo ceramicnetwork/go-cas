@@ -65,8 +65,8 @@ jobs:
         working-directory: ci/cmd/status
       -
         name: Run unit tests
-        run: go run test/main.go
-        working-directory: ci/cmd
+        run: go run main.go
+        working-directory: ci/cmd/test
       -
         name: Set commit status "success"
         run: go run main.go -s success
