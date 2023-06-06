@@ -20,7 +20,7 @@ const EcrUserName = "AWS"
 const (
 	Env_EnvTag       = "ENV_TAG"
 	Env_AwsAccountId = "AWS_ACCOUNT_ID"
-	Env_AWS_REGION   = "AWS_REGION"
+	Env_AwsRegion    = "AWS_REGION"
 )
 
 const (
@@ -40,7 +40,7 @@ func main() {
 	defer client.Close()
 
 	contextDir := client.Host().Directory(".")
-	registry := os.Getenv(Env_AwsAccountId) + ".dkr.ecr." + os.Getenv(Env_AWS_REGION) + ".amazonaws.com"
+	registry := os.Getenv(Env_AwsAccountId) + ".dkr.ecr." + os.Getenv(Env_AwsRegion) + ".amazonaws.com"
 	envTag := os.Getenv(Env_EnvTag)
 	container := contextDir.
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
@@ -54,7 +54,7 @@ func main() {
 		)
 	tags := []string{
 		envTag,
-		//os.Getenv("BRANCH"),
+		os.Getenv("BRANCH"),
 		os.Getenv("SHA"),
 		os.Getenv("SHA_TAG"),
 	}

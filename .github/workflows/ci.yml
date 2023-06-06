@@ -46,14 +46,9 @@ jobs:
           echo "ENV_TAG=prod" >> $GITHUB_ENV
       -
         name: Set rc branch tag
-        if: ${{ env.BRANCH == 'tnet' }}
+        if: ${{ env.BRANCH == 'release-candidate' }}
         run: |
           echo "ENV_TAG=tnet" >> $GITHUB_ENV
-      -
-        name: Set qa branch tag
-        if: ${{ env.BRANCH == 'qa' }}
-        run: |
-          echo "ENV_TAG=qa" >> $GITHUB_ENV
       -
         name: Set develop branch tag
         if: ${{ env.BRANCH == 'develop' || env.ENV_TAG == '' }}
@@ -66,8 +61,17 @@ jobs:
 #        name: Run unit tests
 #        run: go run ci/cmd/test/main.go
       -
+        name: Set publish flag
+        if: ${{ env.BRANCH == 'main' || env.BRANCH == 'release-candidate' || env.BRANCH == 'develop' }}
+        run: echo "PUBLISH=true" >> $GITHUB_ENV
+      -
         name: Build and push image
+        if: ${{ env.PUBLISH == 'true' }}
         run: go run ci/cmd/build/main.go
+      -
+        name: Create deployment job
+        if: ${{ env.PUBLISH == 'true' }}
+        run: go run ci/cmd/deploy/main.go
       -
         name: Set commit status "success"
         run: go run ci/cmd/status/main.go -s success
