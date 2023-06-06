@@ -5,12 +5,15 @@ go 1.19
 //replace github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567 => ../go-sqs
 
 require (
+	dagger.io/dagger v0.7.1
 	github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3
 	github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829
+	github.com/alexflint/go-arg v1.4.2
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.4
 	github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue v1.10.7
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.8
+	github.com/aws/aws-sdk-go-v2/service/ecr v1.18.11
 	github.com/aws/aws-sdk-go-v2/service/sqs v1.22.0
 	github.com/disgoorg/disgo v0.16.4
 	github.com/disgoorg/snowflake/v2 v2.0.1
@@ -20,17 +23,16 @@ require (
 )
 
 require (
-	dagger.io/dagger v0.7.1 // indirect
 	github.com/99designs/gqlgen v0.17.2 // indirect
 	github.com/Khan/genqlient v0.5.0 // indirect
 	github.com/adrg/xdg v0.4.0 // indirect
+	github.com/alexflint/go-scalar v1.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.20 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.33 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.4.27 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.3.28 // indirect
 	github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.13.27 // indirect
-	github.com/aws/aws-sdk-go-v2/service/ecr v1.18.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.20 // indirect

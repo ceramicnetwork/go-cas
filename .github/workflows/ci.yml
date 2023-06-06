@@ -61,8 +61,7 @@ jobs:
           echo "ENV_TAG=dev" >> $GITHUB_ENV
       -
         name: Set commit status "pending"
-        run: go run main.go -s pending
-        working-directory: ci/cmd/status
+        run: go run ci/cmd/status/main.go -s pending
 #      -
 #        name: Run unit tests
 #        run: go run ci/cmd/test/main.go
@@ -71,10 +70,8 @@ jobs:
         run: go run ci/cmd/build/main.go
       -
         name: Set commit status "success"
-        run: go run main.go -s success
-        working-directory: ci/cmd/status
+        run: go run ci/cmd/status/main.go -s success
       -
         name: Set commit status "failure"
         if: ${{ failure() }}
-        run: go run main.go -s failure
-        working-directory: ci/cmd/status
+        run: go run ci/cmd/status/main.go -s failure
