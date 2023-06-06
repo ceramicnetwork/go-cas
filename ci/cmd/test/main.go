@@ -23,7 +23,7 @@ func main() {
 		From("golang:1.19").
 		WithDirectory(
 			"/src",
-			client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
+			client.Host().Directory("../../../"), dagger.ContainerWithDirectoryOpts{
 				Exclude: []string{"ci/"},
 			},
 		)
