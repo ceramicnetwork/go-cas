@@ -43,6 +43,8 @@ github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.8 h1:VgdGaSIoH4JhUZIspT8UgK0
 github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.8/go.mod h1:jvXzk+hVrlkiQOvnq6jH+F6qBK0CEceXkEWugT+4Kdc=
 github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.13.27 h1:7MhqbR+k+b0gbOxp+W8yXgsl/Z5/dtMh85K0WI8X2EA=
 github.com/aws/aws-sdk-go-v2/service/dynamodbstreams v1.13.27/go.mod h1:wX9QEZJ8Dw1fdAKCOAUmSvAe3wNJFxnE/4AeYc8blGA=
+github.com/aws/aws-sdk-go-v2/service/ecr v1.18.11 h1:wlTgmb/sCmVRJrN5De3CiHj4v/bTCgL5+qpdEd0CPtw=
+github.com/aws/aws-sdk-go-v2/service/ecr v1.18.11/go.mod h1:Ce1q2jlNm8BVpjLaOnwnm5v2RClAbK6txwPljFzyW6c=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.11 h1:y2+VQzC6Zh2ojtV2LoC0MNwHWc6qXv/j2vrQtlftkdA=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.9.11/go.mod h1:iV4q2hsqtNECrfmlXyord9u4zyuFEJX9eLgLpSPzWA8=
 github.com/aws/aws-sdk-go-v2/service/internal/endpoint-discovery v1.7.20 h1:kSZR22oLBDMtP8ZPGXhz649NU77xsJDG7g3xfT6nHVk=

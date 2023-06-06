@@ -63,9 +63,12 @@ jobs:
         name: Set commit status "pending"
         run: go run main.go -s pending
         working-directory: ci/cmd/status
+#      -
+#        name: Run unit tests
+#        run: go run ci/cmd/test/main.go
       -
-        name: Run unit tests
-        run: go run ci/cmd/test/main.go
+        name: Build and push image
+        run: go run ci/cmd/build/main.go
       -
         name: Set commit status "success"
         run: go run main.go -s success

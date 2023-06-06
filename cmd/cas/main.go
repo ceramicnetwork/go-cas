@@ -25,7 +25,7 @@ func main() {
 
 	awsCfg, err := aws.AwsConfig()
 	if err != nil {
-		log.Fatalf("newCeramicLoader: error creating aws cfg: %v", err)
+		log.Fatalf("error creating aws cfg: %v", err)
 	}
 
 	anchorDb := db.NewAnchorDb(db.AnchorDbOpts{
