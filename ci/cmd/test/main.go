@@ -23,13 +23,13 @@ func main() {
 		From("golang:1.19").
 		WithDirectory(
 			"/src",
-			client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
+			client.Host().Directory("../"), dagger.ContainerWithDirectoryOpts{
 				Exclude: []string{"ci/"},
 			},
 		)
 
 	// Set the working directory in the container
-	runner := source.WithWorkdir("/src/services")
+	runner := source.WithWorkdir("/src/services").WithExec([]string{"ls", "lhrt"})
 
 	// Run application tests
 	out, err := runner.WithExec([]string{"go", "test"}).Stderr(ctx)
