@@ -16,12 +16,17 @@ import (
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
+	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/ceramicnetwork/go-cas/services"
 )
 
 func main() {
-	if err := godotenv.Load("env/.env"); err != nil {
-		log.Fatal("Error loading .env file", err)
+	envFile := "env/.env"
+	if envTag, found := os.LookupEnv(models.Env_EnvTag); found {
+		envFile += "." + envTag
+	}
+	if err := godotenv.Load(envFile); err != nil {
+		log.Fatalf("Error loading %s: %v", envFile, err)
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 

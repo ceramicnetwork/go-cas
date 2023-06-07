@@ -12,3 +12,8 @@ const DefaultAnchorBatchSize = 1024
 const DefaultAnchorBatchLinger = 12 * time.Hour
 
 const ServiceName = "cas-scheduler"
+
+// Environment variables
+const (
+	Env_EnvTag = "ENV_TAG"
+)

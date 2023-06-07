@@ -48,7 +48,7 @@ COPY --from=builder /usr/lib/*-linux-gnu*/libcrypto.so* /usr/lib/
 
 # Get the CAS binary and environment variables from the build container.
 ENV SRC_DIR /build
-COPY --from=builder $SRC_DIR/env/.env."$ENV_TAG" /usr/local/bin/cas/env/.env
+COPY --from=builder $SRC_DIR/env/* /usr/local/bin/cas/env/
 COPY --from=builder $SRC_DIR/cmd/cas/cas /usr/local/bin/cas/cas
 
 EXPOSE 8080
