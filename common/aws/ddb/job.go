@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -75,6 +76,8 @@ func (jdb *JobDatabase) CreateJob() error {
 		models.JobParam_Params: map[string]string{
 			models.JobParams_Version:  models.WorkerVersion, // this will launch a CASv5 Worker
 			models.JobParams_Contract: os.Getenv("ANCHOR_CONTRACT_ADDRESS"),
+			models.JobParams_BatchQ:   queue.GetQueueName(queue.QueueType_Batch),
+			models.JobParams_FailureQ: queue.GetQueueName(queue.QueueType_Failure),
 		},
 	}
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {

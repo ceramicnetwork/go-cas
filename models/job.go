@@ -17,4 +17,6 @@ const (
 	JobParam_Params    = "params"
 	JobParams_Version  = "version"
 	JobParams_Contract = "contract"
+	JobParams_BatchQ   = "batchq"
+	JobParams_FailureQ = "failureq"
 )
