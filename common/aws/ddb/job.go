@@ -68,11 +68,14 @@ func (jdb *JobDatabase) createJobTable() error {
 
 func (jdb *JobDatabase) CreateJob() error {
 	newJob := map[string]interface{}{
-		"id":     uuid.New().String(),
-		"ts":     time.Now(),
-		"stage":  models.DefaultJobState,
-		"type":   models.JobType_Anchor,
-		"params": map[string]string{"version": models.WorkerVersion}, // this will launch a CASv5 Worker
+		models.JobParam_Id:    uuid.New().String(),
+		models.JobParam_Ts:    time.Now(),
+		models.JobParam_Stage: models.DefaultJobState,
+		models.JobParam_Type:  models.JobType_Anchor,
+		models.JobParam_Params: map[string]string{
+			models.JobParams_Version:  models.WorkerVersion, // this will launch a CASv5 Worker
+			models.JobParams_Contract: os.Getenv("ANCHOR_CONTRACT_ADDRESS"),
+		},
 	}
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
