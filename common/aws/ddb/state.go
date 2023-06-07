@@ -25,14 +25,13 @@ type StateDatabase struct {
 	checkpointTable string
 }
 
-func NewStateDb(cfg aws.Config) *StateDatabase {
+func NewStateDb(client *dynamodb.Client) *StateDatabase {
 	env := os.Getenv("ENV")
 
 	tablePfx := "cas-anchor-" + env + "-"
 	streamTable := tablePfx + "stream"
 	checkpointTable := tablePfx + "checkpoint"
 
-	client := dynamodb.NewFromConfig(cfg)
 	sdb := StateDatabase{
 		client,
 		streamTable,

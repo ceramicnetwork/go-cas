@@ -42,7 +42,7 @@ func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *Queu
 		}
 	}
 	createQueueIn := sqs.CreateQueueInput{
-		QueueName: aws.String(GetQueueName(queueType)),
+		QueueName: aws.String(queueName(queueType)),
 		Attributes: map[string]string{
 			string(types.QueueAttributeNameVisibilityTimeout): strconv.Itoa(int(visibilityTimeout.Seconds())),
 		},
@@ -64,7 +64,7 @@ func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *Queu
 
 func GetQueueUrl(queueType QueueType, sqsClient *sqs.Client) (string, error) {
 	getQueueUrlIn := sqs.GetQueueUrlInput{
-		QueueName: aws.String(GetQueueName(queueType)),
+		QueueName: aws.String(queueName(queueType)),
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 	defer cancel()
@@ -99,6 +99,6 @@ func getQueueAttributes(queueUrl string, sqsClient *sqs.Client) (map[string]stri
 	}
 }
 
-func GetQueueName(queueType QueueType) string {
+func queueName(queueType QueueType) string {
 	return fmt.Sprintf("cas-anchor-%s-%s", os.Getenv("ENV"), string(queueType))
 }

@@ -13,21 +13,23 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type JobDatabase struct {
-	client   *dynamodb.Client
-	jobTable string
+	ddbClient *dynamodb.Client
+	sqsClient *sqs.Client
+	jobTable  string
 }
 
-func NewJobDb(cfg aws.Config) *JobDatabase {
+func NewJobDb(ddbClient *dynamodb.Client, sqsClient *sqs.Client) *JobDatabase {
 	jobTable := "ceramic-" + os.Getenv("ENV") + "-ops"
-	client := dynamodb.NewFromConfig(cfg)
 	jdb := JobDatabase{
-		client,
+		ddbClient,
+		sqsClient,
 		jobTable,
 	}
 	if err := jdb.createJobTable(); err != nil {
@@ -64,20 +66,31 @@ func (jdb *JobDatabase) createJobTable() error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return createTable(jdb.client, &createJobTableInput)
+	return createTable(jdb.ddbClient, &createJobTableInput)
 }
 
 func (jdb *JobDatabase) CreateJob() error {
+	batchQueueUrl, err := queue.GetQueueUrl(queue.QueueType_Batch, jdb.sqsClient)
+	if err != nil {
+		return err
+	}
+	failureQueueUrl, err := queue.GetQueueUrl(queue.QueueType_Failure, jdb.sqsClient)
+	if err != nil {
+		return err
+	}
 	newJob := map[string]interface{}{
 		models.JobParam_Id:    uuid.New().String(),
 		models.JobParam_Ts:    time.Now(),
 		models.JobParam_Stage: models.DefaultJobState,
 		models.JobParam_Type:  models.JobType_Anchor,
-		models.JobParam_Params: map[string]string{
-			models.JobParams_Version:  models.WorkerVersion, // this will launch a CASv5 Worker
-			models.JobParams_Contract: os.Getenv("ANCHOR_CONTRACT_ADDRESS"),
-			models.JobParams_BatchQ:   queue.GetQueueName(queue.QueueType_Batch),
-			models.JobParams_FailureQ: queue.GetQueueName(queue.QueueType_Failure),
+		models.JobParam_Params: map[string]interface{}{
+			models.JobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
+			models.JobParam_Overrides: map[string]string{
+				models.AnchorOverrides_UseQueueBatches: "true",
+				models.AnchorOverrides_ContractAddress: os.Getenv("ANCHOR_CONTRACT_ADDRESS"),
+				models.AnchorOverrides_BatchQueueUrl:   batchQueueUrl,
+				models.AnchorOverrides_FailureQueueUrl: failureQueueUrl,
+			},
 		},
 	}
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
@@ -91,7 +104,7 @@ func (jdb *JobDatabase) CreateJob() error {
 		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
 		defer cancel()
 
-		_, err = jdb.client.PutItem(ctx, &dynamodb.PutItemInput{
+		_, err = jdb.ddbClient.PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String(jdb.jobTable),
 			Item:      attributeValues,
 		})

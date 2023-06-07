@@ -8,6 +8,7 @@ import (
 
 	"github.com/joho/godotenv"
 
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
@@ -48,8 +49,13 @@ func main() {
 			log.Fatalf("failed to create aws cfg: %v", err)
 		}
 	}
-	stateDb := ddb.NewStateDb(dbAwsCfg)
-	jobDb := ddb.NewJobDb(dbAwsCfg)
+
+	// HTTP clients
+	dynamoDbClient := dynamodb.NewFromConfig(dbAwsCfg)
+	sqsClient := sqs.NewFromConfig(awsCfg)
+
+	stateDb := ddb.NewStateDb(dynamoDbClient)
+	jobDb := ddb.NewJobDb(dynamoDbClient, sqsClient)
 
 	discordHandler, err := notifs.NewDiscordHandler()
 	if err != nil {
@@ -71,9 +77,6 @@ func main() {
 	// 4. Failure handling service:
 	//  - Monitor the DLQ
 	//  - Raise Discord alert for messages dropping through to the DLQ
-
-	// HTTP clients
-	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	// Queue publishers
 

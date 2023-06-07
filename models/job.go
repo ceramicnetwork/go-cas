@@ -15,8 +15,14 @@ const (
 	JobParam_Stage     = "stage"
 	JobParam_Type      = "type"
 	JobParam_Params    = "params"
-	JobParams_Version  = "version"
-	JobParams_Contract = "contract"
-	JobParams_BatchQ   = "batchq"
-	JobParams_FailureQ = "failureq"
+	JobParam_Version   = "version"
+	JobParam_Overrides = "overrides"
+)
+
+// These need to match the Anchor Worker environment variable names
+const (
+	AnchorOverrides_UseQueueBatches = "USE_QUEUE_BATCHES"
+	AnchorOverrides_ContractAddress = "ANCHOR_CONTRACT_ADDRESS"
+	AnchorOverrides_BatchQueueUrl   = "SQS_BATCH_QUEUE_URL"
+	AnchorOverrides_FailureQueueUrl = "SQS_FAILURE_QUEUE_URL"
 )
