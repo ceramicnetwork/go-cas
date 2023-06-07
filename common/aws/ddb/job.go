@@ -23,7 +23,7 @@ type JobDatabase struct {
 }
 
 func NewJobDb(cfg aws.Config) *JobDatabase {
-	jobTable := "ceramic-" + os.Getenv("ENV") + "ops"
+	jobTable := "ceramic-" + os.Getenv("ENV") + "-ops"
 	client := dynamodb.NewFromConfig(cfg)
 	jdb := JobDatabase{
 		client,
