@@ -22,6 +22,10 @@ type StateRepository interface {
 	GetAnchoredCid(string, string) (*StreamCid, error)
 }
 
+type JobRepository interface {
+	CreateJob() error
+}
+
 type QueuePublisher interface {
 	SendMessage(ctx context.Context, event any) (string, error)
 }

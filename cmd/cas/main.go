@@ -10,7 +10,8 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
-	"github.com/ceramicnetwork/go-cas/common/aws"
+	"github.com/ceramicnetwork/go-cas/common/aws/config"
+	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
@@ -23,9 +24,9 @@ func main() {
 	}
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	awsCfg, err := aws.AwsConfig()
+	awsCfg, err := config.AwsConfig()
 	if err != nil {
-		log.Fatalf("newCeramicLoader: error creating aws cfg: %v", err)
+		log.Fatalf("error creating aws cfg: %v", err)
 	}
 
 	anchorDb := db.NewAnchorDb(db.AnchorDbOpts{
@@ -42,12 +43,13 @@ func main() {
 	stateDbEndpoint := os.Getenv("DB_AWS_ENDPOINT")
 	if len(stateDbEndpoint) > 0 {
 		log.Printf("using custom state db endpoint: %s", stateDbEndpoint)
-		dbAwsCfg, err = aws.AwsConfigWithOverride(stateDbEndpoint)
+		dbAwsCfg, err = config.AwsConfigWithOverride(stateDbEndpoint)
 		if err != nil {
 			log.Fatalf("failed to create aws cfg: %v", err)
 		}
 	}
-	stateDb := db.NewStateDb(dbAwsCfg)
+	stateDb := ddb.NewStateDb(dbAwsCfg)
+	jobDb := ddb.NewJobDb(dbAwsCfg)
 
 	discordHandler, err := notifs.NewDiscordHandler()
 	if err != nil {
@@ -110,7 +112,7 @@ func main() {
 	// also maintaining backpressure on the queues.
 
 	// The Batching Service reads from the Ready queue and posts to the Batch queue
-	batchingService := services.NewBatchingService(batchQueue)
+	batchingService := services.NewBatchingService(batchQueue, jobDb)
 	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
 
 	// The Validation Service reads from the Validate queue and posts to the Ready queue

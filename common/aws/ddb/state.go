@@ -1,4 +1,4 @@
-package db
+package ddb
 
 import (
 	"context"
@@ -16,8 +16,6 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const stateTableCreationRetries = 3
-const stateTableCreationWait = 3 * time.Second
 const stateIdTsIndex = "id-ts-index"
 const stateIdAnchorTsIndex = "id-anc-ts-index"
 
@@ -71,7 +69,7 @@ func (sdb *StateDatabase) createCheckpointTable() error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return sdb.createTable(&createStreamTableInput)
+	return createTable(sdb.client, &createStreamTableInput)
 }
 
 func (sdb *StateDatabase) createStreamTable() error {
@@ -152,39 +150,7 @@ func (sdb *StateDatabase) createStreamTable() error {
 			},
 		},
 	}
-	return sdb.createTable(&createStreamTableInput)
-}
-
-func (sdb *StateDatabase) createTable(createTableIn *dynamodb.CreateTableInput) error {
-	if exists, err := sdb.tableExists(*createTableIn.TableName); !exists {
-		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-		defer cancel()
-
-		if _, err = sdb.client.CreateTable(ctx, createTableIn); err != nil {
-			return err
-		}
-		var exists bool
-		for i := 0; i < stateTableCreationRetries; i++ {
-			if exists, err = sdb.tableExists(*createTableIn.TableName); exists {
-				return nil
-			}
-			time.Sleep(stateTableCreationWait)
-		}
-		return err
-	}
-	return nil
-}
-
-func (sdb *StateDatabase) tableExists(table string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
-	if output, err := sdb.client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {
-		log.Printf("dynamodb: table does not exist: %v", table)
-		return false, err
-	} else {
-		return output.Table.TableStatus == types.TableStatusActive, nil
-	}
+	return createTable(sdb.client, &createStreamTableInput)
 }
 
 func (sdb *StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Time, error) {

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -48,6 +50,17 @@ func (f *FakeStateRepository) StoreCid(streamCid *models.StreamCid) (bool, error
 	}
 
 	return false, nil
+}
+
+type FakeJobRepository struct {
+	models.JobRepository
+	jobStore map[string]bool
+}
+
+func (f *FakeJobRepository) CreateJob() error {
+	jobId := uuid.New().String()
+	f.jobStore[jobId] = true
+	return nil
 }
 
 type FakePublisher struct {

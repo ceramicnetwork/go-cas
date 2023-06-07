@@ -58,7 +58,8 @@ func TestBatch(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			batchingServices := NewBatchingService(test.publisher)
+			jobRepo := &FakeJobRepository{jobStore: make(map[string]bool)}
+			batchingServices := NewBatchingService(test.publisher, jobRepo)
 			ctx, cancel := context.WithCancel(context.Background())
 
 			var wg sync.WaitGroup
@@ -71,7 +72,7 @@ func TestBatch(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					err := batchingServices.Batch(ctx, string(encodedRequest))
+					err := batchingServices.Batch(ctx, encodedRequest)
 
 					if err != nil && !test.shouldError {
 						t.Errorf("Unexpected error received %v", err)
@@ -87,6 +88,9 @@ func TestBatch(t *testing.T) {
 				cancel()
 				if len(test.publisher.messages) != 0 {
 					t.Errorf("Received %v messages but should have received none", len(test.publisher.messages))
+				}
+				if len(jobRepo.jobStore) != 0 {
+					t.Errorf("Found %v worker jobs but should have found none", len(jobRepo.jobStore))
 				}
 			} else {
 				// with 5 requests 2 batches should have been created
@@ -111,9 +115,11 @@ func TestBatch(t *testing.T) {
 						t.Errorf("Expected %v requests in batch %v. Contained %v requests", numRequestsInBatch, i+1, len(receivedBatches[i].Ids))
 					}
 				}
+				// make sure that a worker job is create for each batch successfully created
+				if len(jobRepo.jobStore) != len(test.expectedNumberOfRequestsPerBatch) {
+					t.Errorf("Expected %v worker jobs. Found %v jobs", len(test.expectedNumberOfRequestsPerBatch), len(jobRepo.jobStore))
+				}
 			}
-
 		})
 	}
-
 }
