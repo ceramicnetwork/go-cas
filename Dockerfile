@@ -33,9 +33,6 @@ RUN set -eux; \
 # Now comes the actual target image, which aims to be as small as possible.
 FROM busybox:1.31.1-glibc as target
 
-ARG ENV_TAG
-ENV ENV_TAG=$ENV_TAG
-
 COPY --from=builder /tmp/tini /sbin/tini
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
 

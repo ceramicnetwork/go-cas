@@ -42,11 +42,7 @@ func main() {
 	contextDir := client.Host().Directory(".")
 	registry := os.Getenv(Env_AwsAccountId) + ".dkr.ecr." + os.Getenv(Env_AwsRegion) + ".amazonaws.com"
 	envTag := os.Getenv(Env_EnvTag)
-	container := contextDir.
-		DockerBuild(dagger.DirectoryDockerBuildOpts{
-			Platform:  "linux/amd64",
-			BuildArgs: []dagger.BuildArg{{Name: Env_EnvTag, Value: envTag}},
-		})
+	container := contextDir.DockerBuild(dagger.DirectoryDockerBuildOpts{Platform: "linux/amd64"})
 	tags := []string{
 		envTag,
 		os.Getenv("BRANCH"),
@@ -56,6 +52,8 @@ func main() {
 	// Only production images get the "latest" tag
 	if envTag == EnvTag_Prod {
 		tags = append(tags, "latest")
+	} else if envTag == EnvTag_Dev {
+		tags = append(tags, EnvTag_Qa) // additionally tag with "qa" for images built from the "develop" branch
 	}
 	if err = pushImage(ctx, client, container, registry, tags); err != nil {
 		log.Fatalf("build: failed to push image: %v", err)
