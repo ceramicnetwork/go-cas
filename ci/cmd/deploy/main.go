@@ -42,6 +42,9 @@ func createJob(ctx context.Context) error {
 			"shaTag":    os.Getenv("SHA_TAG"),
 		},
 	}
+	// Marshal the CD Manager job into DynamoDB-JSON, which is different from regular JSON and requires data types to be
+	// specified explicitly. The time encode function ensures that the timestamp has millisecond-resolution, which is
+	// what the CD Manager expects.
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
 			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil

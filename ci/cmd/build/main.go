@@ -46,12 +46,7 @@ func main() {
 		DockerBuild(dagger.DirectoryDockerBuildOpts{
 			Platform:  "linux/amd64",
 			BuildArgs: []dagger.BuildArg{{Name: Env_EnvTag, Value: envTag}},
-		}).
-		WithRegistryAuth(
-			registry,
-			"AWS",
-			client.SetSecret("EcrAuthToken", getEcrToken(ctx)),
-		)
+		})
 	tags := []string{
 		envTag,
 		os.Getenv("BRANCH"),
@@ -62,12 +57,15 @@ func main() {
 	if envTag == EnvTag_Prod {
 		tags = append(tags, "latest")
 	}
-	if err = pushImage(ctx, container, registry, tags); err != nil {
+	if err = pushImage(ctx, client, container, registry, tags); err != nil {
 		log.Fatalf("build: failed to push image: %v", err)
 	}
 }
 
-func pushImage(ctx context.Context, container *dagger.Container, registry string, tags []string) error {
+func pushImage(ctx context.Context, client *dagger.Client, container *dagger.Container, registry string, tags []string) error {
+	// Set up registry authentication
+	ecrToken := client.SetSecret("EcrAuthToken", getEcrToken(ctx))
+	container = container.WithRegistryAuth(registry, "AWS", ecrToken)
 	for _, tag := range tags {
 		if _, err := container.Publish(ctx, fmt.Sprintf(fmt.Sprintf("%s/app-cas-scheduler:%s", registry, tag))); err != nil {
 			return err
