@@ -2,7 +2,7 @@ name: Build and deploy
 
 on:
   push:
-    branches: [ develop, qa, tnet, main ]
+    branches: [ develop, release-candidate, main ]
   pull_request: # pull requests
   workflow_dispatch: # manually triggered
 
