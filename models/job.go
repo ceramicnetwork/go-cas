@@ -22,7 +22,7 @@ const (
 // These need to match the Anchor Worker environment variable names
 const (
 	AnchorOverrides_UseQueueBatches = "USE_QUEUE_BATCHES"
-	AnchorOverrides_ContractAddress = "ANCHOR_CONTRACT_ADDRESS"
+	AnchorOverrides_ContractAddress = "ETH_CONTRACT_ADDRESS"
 	AnchorOverrides_BatchQueueUrl   = "SQS_BATCH_QUEUE_URL"
 	AnchorOverrides_FailureQueueUrl = "SQS_FAILURE_QUEUE_URL"
 )
