@@ -1,0 +1,4 @@
+ci/
+*[Dd]ocker*
+.gitignore
+README.md

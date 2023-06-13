@@ -50,6 +50,8 @@ COPY --from=builder $SRC_DIR/cmd/cas/cas /usr/local/bin/cas/cas
 
 EXPOSE 8080
 
+ENV ENV_TAG dev
+
 WORKDIR /usr/local/bin/cas
 
 CMD ["/sbin/tini", "-s", "./cas"]

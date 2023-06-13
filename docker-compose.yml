@@ -4,8 +4,6 @@ services:
   cas:
     build:
       context: ../go-cas
-      args:
-        ENV_TAG: dev
     container_name: go_cas
     restart: on-failure
     environment:
@@ -20,7 +18,6 @@ services:
       - PG_USER=root
       - PG_PASSWORD=root
       - PG_DB=anchor_db
-      - ENV=dev
       - ANCHOR_BATCH_SIZE=4
       - ANCHOR_BATCH_LINGER=5m
     depends_on:
