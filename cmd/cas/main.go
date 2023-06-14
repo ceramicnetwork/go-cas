@@ -50,7 +50,7 @@ func main() {
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	stateDb := ddb.NewStateDb(dynamoDbClient)
-	jobDb := ddb.NewJobDb(dynamoDbClient, sqsClient)
+	jobDb := ddb.NewJobDb(dynamoDbClient)
 
 	discordHandler, err := notifs.NewDiscordHandler()
 	if err != nil {

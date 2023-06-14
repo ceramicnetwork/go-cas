@@ -13,25 +13,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
-
-	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type JobDatabase struct {
 	ddbClient *dynamodb.Client
-	sqsClient *sqs.Client
 	jobTable  string
 }
 
-func NewJobDb(ddbClient *dynamodb.Client, sqsClient *sqs.Client) *JobDatabase {
+func NewJobDb(ddbClient *dynamodb.Client) *JobDatabase {
 	jobTable := "ceramic-" + os.Getenv("ENV") + "-ops"
-	jdb := JobDatabase{
-		ddbClient,
-		sqsClient,
-		jobTable,
-	}
+	jdb := JobDatabase{ddbClient, jobTable}
 	if err := jdb.createJobTable(); err != nil {
 		log.Fatalf("job: table creation failed: %v", err)
 	}
@@ -70,14 +62,6 @@ func (jdb *JobDatabase) createJobTable() error {
 }
 
 func (jdb *JobDatabase) CreateJob() error {
-	batchQueueUrl, err := queue.GetQueueUrl(queue.QueueType_Batch, jdb.sqsClient)
-	if err != nil {
-		return err
-	}
-	failureQueueUrl, err := queue.GetQueueUrl(queue.QueueType_Failure, jdb.sqsClient)
-	if err != nil {
-		return err
-	}
 	newJob := map[string]interface{}{
 		models.JobParam_Id:    uuid.New().String(),
 		models.JobParam_Ts:    time.Now(),
@@ -85,12 +69,6 @@ func (jdb *JobDatabase) CreateJob() error {
 		models.JobParam_Type:  models.JobType_Anchor,
 		models.JobParam_Params: map[string]interface{}{
 			models.JobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
-			models.JobParam_Overrides: map[string]string{
-				models.AnchorOverrides_UseQueueBatches: "true",
-				models.AnchorOverrides_ContractAddress: os.Getenv("ANCHOR_CONTRACT_ADDRESS"),
-				models.AnchorOverrides_BatchQueueUrl:   batchQueueUrl,
-				models.AnchorOverrides_FailureQueueUrl: failureQueueUrl,
-			},
 		},
 	}
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
