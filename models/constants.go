@@ -10,6 +10,8 @@ const DefaultTick = 1 * time.Second
 const DefaultHttpWaitTime = 10 * time.Second
 const DefaultAnchorBatchSize = 1024
 const DefaultAnchorBatchLinger = 12 * time.Hour
+const DefaultAnchorBatchMonitorTick = 5 * time.Minute
+const DefaultMaxAnchorWorkers = 1
 
 const ServiceName = "cas-scheduler"
 

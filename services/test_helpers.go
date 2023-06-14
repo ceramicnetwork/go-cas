@@ -53,13 +53,19 @@ func (f *FakeStateRepository) StoreCid(streamCid *models.StreamCid) (bool, error
 }
 
 type FakeJobRepository struct {
-	models.JobRepository
-	jobStore map[string]bool
+	jobStore  map[string]bool
+	failCount int
 }
 
 func (f *FakeJobRepository) CreateJob() error {
-	jobId := uuid.New().String()
-	f.jobStore[jobId] = true
+	if f.jobStore == nil {
+		f.jobStore = make(map[string]bool, 1)
+	}
+	if f.failCount > 0 {
+		f.failCount--
+		return fmt.Errorf("failed to create job")
+	}
+	f.jobStore[uuid.New().String()] = true
 	return nil
 }
 
@@ -105,4 +111,20 @@ func waitForMesssages(messageChannel chan any, n int) []any {
 		messages[i] = message
 	}
 	return messages
+}
+
+type FakeQueueMonitor struct {
+	unprocessed int
+	inFlight    int
+	jobDb       *FakeJobRepository
+	failCount   int
+}
+
+func (f *FakeQueueMonitor) GetQueueUtilization(ctx context.Context) (int, int, error) {
+	if f.failCount > 0 {
+		f.failCount--
+		return 0, 0, fmt.Errorf("failed to get utilization")
+	}
+	// Increment in flight by as many jobs as were created in the job DB and decrement unprocessed by the same number
+	return f.unprocessed - len(f.jobDb.jobStore), f.inFlight + len(f.jobDb.jobStore), nil
 }

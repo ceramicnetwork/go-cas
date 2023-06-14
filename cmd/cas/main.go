@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"sync"
@@ -59,17 +60,15 @@ func main() {
 
 	// Flow:
 	// ====
-	// 1. Request polling service:
-	//	- Poll anchor DB for new requests
-	//  - Post requests to Validate queue
-	// 2. Validation service:
+	// 1. Validation service:
+	//	- Read requests from Validate queue
 	//  - Deduplicate request stream/CIDs
 	//  - Post requests to Ready queue
-	// 3. Batching service:
+	// 2. Batching service:
 	//	- Read requests from Ready queue
 	//  - Accumulate requests until either batch is full or time runs out
 	//  - Post batches to Batch queue
-	// 4. Failure handling service:
+	// 3. Failure handling service:
 	//  - Monitor the DLQ
 	//  - Raise Discord alert for messages dropping through to the DLQ
 
@@ -110,7 +109,7 @@ func main() {
 	// also maintaining backpressure on the queues.
 
 	// The Batching Service reads from the Ready queue and posts to the Batch queue
-	batchingService := services.NewBatchingService(batchQueue, jobDb)
+	batchingService := services.NewBatchingService(batchQueue)
 	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
 
 	// The Validation Service reads from the Validate queue and posts to the Ready queue
@@ -125,5 +124,7 @@ func main() {
 	// Start the polling services last
 	wg := sync.WaitGroup{}
 	wg.Add(1)
+	// Monitor the Batch queue and spawn anchor workers accordingly
+	go services.NewWorkerService(queue.NewMonitor(batchQueue.QueueUrl, sqsClient), jobDb).Launch(context.Background())
 	wg.Wait()
 }

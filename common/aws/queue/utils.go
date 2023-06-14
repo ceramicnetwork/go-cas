@@ -62,6 +62,18 @@ func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *Queu
 	}
 }
 
+func GetQueueUtilization(ctx context.Context, queueUrl string, sqsClient *sqs.Client) (int, int, error) {
+	if queueAttr, err := getQueueAttributes(ctx, queueUrl, sqsClient); err != nil {
+		return 0, 0, err
+	} else if numMsgsUnprocessed, err := strconv.Atoi(queueAttr[string(types.QueueAttributeNameApproximateNumberOfMessages)]); err != nil {
+		return 0, 0, err
+	} else if numMsgsInFlight, err := strconv.Atoi(queueAttr[string(types.QueueAttributeNameApproximateNumberOfMessagesNotVisible)]); err != nil {
+		return 0, 0, err
+	} else {
+		return numMsgsUnprocessed, numMsgsInFlight, nil
+	}
+}
+
 func GetQueueUrl(queueType QueueType, sqsClient *sqs.Client) (string, error) {
 	getQueueUrlIn := sqs.GetQueueUrlInput{
 		QueueName: aws.String(queueName(queueType)),
@@ -77,22 +89,25 @@ func GetQueueUrl(queueType QueueType, sqsClient *sqs.Client) (string, error) {
 }
 
 func GetQueueArn(queueUrl string, sqsClient *sqs.Client) (string, error) {
-	if queueAttr, err := getQueueAttributes(queueUrl, sqsClient); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+	defer cancel()
+
+	if queueAttr, err := getQueueAttributes(ctx, queueUrl, sqsClient); err != nil {
 		return "", err
 	} else {
 		return queueAttr[string(types.QueueAttributeNameQueueArn)], nil
 	}
 }
 
-func getQueueAttributes(queueUrl string, sqsClient *sqs.Client) (map[string]string, error) {
+func getQueueAttributes(ctx context.Context, queueUrl string, sqsClient *sqs.Client) (map[string]string, error) {
 	getQueueAttrIn := sqs.GetQueueAttributesInput{
 		QueueUrl:       aws.String(queueUrl),
 		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
+	qCtx, qCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer qCancel()
 
-	if getQueueAttrOut, err := sqsClient.GetQueueAttributes(ctx, &getQueueAttrIn); err != nil {
+	if getQueueAttrOut, err := sqsClient.GetQueueAttributes(qCtx, &getQueueAttrIn); err != nil {
 		return nil, nil
 	} else {
 		return getQueueAttrOut.Attributes, nil

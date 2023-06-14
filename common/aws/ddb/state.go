@@ -17,7 +17,7 @@ import (
 )
 
 const stateIdTsIndex = "id-ts-index"
-const stateIdAnchorTsIndex = "id-anc-ts-index"
+const stateIdAnchorTsIndex = "id-ats-index"
 
 type StateDatabase struct {
 	client          *dynamodb.Client

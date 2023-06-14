@@ -18,5 +18,5 @@ type StreamCid struct {
 	StreamId  string     `dynamodbav:"id"`
 	Cid       string     `dynamodbav:"cid"`
 	Timestamp time.Time  `dynamodbav:"ts,unixtime"` // can be used for TTL
-	AnchorTs  *time.Time `dynamodbav:"anc,unixtime,omitempty"`
+	AnchorTs  *time.Time `dynamodbav:"ats,unixtime,omitempty"`
 }

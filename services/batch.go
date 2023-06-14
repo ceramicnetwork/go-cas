@@ -19,10 +19,9 @@ import (
 type BatchingService struct {
 	batchPublisher models.QueuePublisher
 	batcher        *batch.Executor[*models.AnchorRequestMessage, *uuid.UUID]
-	jobDb          models.JobRepository
 }
 
-func NewBatchingService(batchPublisher models.QueuePublisher, jobDb models.JobRepository) *BatchingService {
+func NewBatchingService(batchPublisher models.QueuePublisher) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -35,7 +34,7 @@ func NewBatchingService(batchPublisher models.QueuePublisher, jobDb models.JobRe
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-	batchingService := BatchingService{batchPublisher: batchPublisher, jobDb: jobDb}
+	batchingService := BatchingService{batchPublisher: batchPublisher}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
 	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](beOpts, batchingService.batch)
 	return &batchingService
@@ -66,11 +65,6 @@ func (b BatchingService) batch(anchorReqs []*models.AnchorRequestMessage) ([]res
 	}
 	if _, err := b.batchPublisher.SendMessage(context.Background(), anchorReqBatch); err != nil {
 		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
-		return nil, err
-	}
-	// TODO: Implement a more better scaling mechanism for anchor workers - for now just launch a worker per batch.
-	if err := b.jobDb.CreateJob(); err != nil {
-		log.Printf("batch: failed to create worker job: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}
 	log.Printf("batch: generated batch: %v", anchorReqBatch)
