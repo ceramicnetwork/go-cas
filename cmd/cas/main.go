@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"os"
 	"sync"
@@ -14,7 +13,6 @@ import (
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
-	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/ceramicnetwork/go-cas/services"
@@ -34,14 +32,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("error creating aws cfg: %v", err)
 	}
-
-	anchorDb := db.NewAnchorDb(db.AnchorDbOpts{
-		Host:     os.Getenv("PG_HOST"),
-		Port:     os.Getenv("PG_PORT"),
-		User:     os.Getenv("PG_USER"),
-		Password: os.Getenv("PG_PASSWORD"),
-		Name:     os.Getenv("PG_DB"),
-	})
 
 	// Use override endpoint, if specified, for state DB so that we can store jobs locally, while hitting regular AWS
 	// endpoints for other operations. This allows local testing without affecting live processes in AWS.
@@ -135,7 +125,5 @@ func main() {
 	// Start the polling services last
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	// Poll from Anchor DB and post to the Validate queue to kick-off processing
-	go services.NewRequestPoller(anchorDb, stateDb, validateQueue).Run(context.Background())
 	wg.Wait()
 }
