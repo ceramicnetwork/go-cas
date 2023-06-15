@@ -9,16 +9,16 @@ import (
 )
 
 type RequestPoller struct {
-	anchorDb       models.AnchorRepository
-	stateDb        models.StateRepository
-	readyPublisher models.QueuePublisher
+	anchorDb          models.AnchorRepository
+	stateDb           models.StateRepository
+	validatePublisher models.QueuePublisher
 }
 
-func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, readyPublisher models.QueuePublisher) *RequestPoller {
+func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, validatePublisher models.QueuePublisher) *RequestPoller {
 	return &RequestPoller{
-		anchorDb:       anchorDb,
-		stateDb:        stateDb,
-		readyPublisher: readyPublisher,
+		anchorDb:          anchorDb,
+		stateDb:           stateDb,
+		validatePublisher: validatePublisher,
 	}
 }
 
@@ -70,7 +70,7 @@ func (rp RequestPoller) sendRequestMessages(ctx context.Context, anchorReqs []*m
 		// the checkpoint (e.g. what if one message from the middle of the batch fails to send?). For now, while we're
 		// still using two databases, make this sequential. Once we have a single database, we won't need the poller at
 		// all - the API can then write directly to DynamoDB/SQS.
-		if _, err := rp.readyPublisher.SendMessage(ctx, anchorReq); err != nil {
+		if _, err := rp.validatePublisher.SendMessage(ctx, anchorReq); err != nil {
 			log.Printf("requestpoll: failed to send message: %v, %v", anchorReq, err)
 			break
 		}

@@ -21,8 +21,9 @@ type anchorRequest struct {
 	Id        uuid.UUID
 	Cid       string
 	StreamId  string
-	CreatedAt time.Time
+	Origin    string
 	Timestamp time.Time
+	CreatedAt time.Time
 	Metadata  *models.StreamMetadata
 }
 
@@ -39,7 +40,7 @@ func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 }
 
 func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
-	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.created_at, REQ.timestamp, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
+	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
 	anchorRequests, err := adb.query(
 		query,
 		status,
@@ -55,8 +56,8 @@ func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, since time.T
 				Id:        anchorReq.Id,
 				StreamId:  anchorReq.StreamId,
 				Cid:       anchorReq.Cid,
+				Origin:    anchorReq.Origin,
 				Timestamp: anchorReq.Timestamp,
-				Metadata:  anchorReq.Metadata,
 				CreatedAt: anchorReq.CreatedAt,
 			}
 		}
@@ -98,8 +99,9 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 			&anchorReq.Id,
 			&anchorReq.Cid,
 			&anchorReq.StreamId,
-			&anchorReq.CreatedAt,
+			&anchorReq.Origin,
 			&anchorReq.Timestamp,
+			&anchorReq.CreatedAt,
 			&anchorReq.Metadata,
 		)
 		if err != nil {
@@ -111,8 +113,8 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 	return anchorRequests, nil
 }
 
-func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatus, message string) error {
-	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, status *models.RequestStatusMessage) error {
+	dbCtx, dbCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
 	defer dbCancel()
 
 	connUrl := fmt.Sprintf(
@@ -131,11 +133,10 @@ func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatu
 	defer conn.Close(context.Background())
 
 	_, err = conn.Exec(
-		context.Background(), "UPDATE request SET status = $1, message = $2, updated_at = $3 WHERE id = $4",
-		status,
-		message,
+		context.Background(), "UPDATE request SET status = $1, updated_at = $3 WHERE id = $4",
+		status.Status,
 		time.Now().UTC(),
-		id,
+		status.Id,
 	)
 	if err != nil {
 		log.Printf("update: error updating db: %v", err)

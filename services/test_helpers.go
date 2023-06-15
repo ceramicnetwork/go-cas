@@ -11,13 +11,14 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-type SpyAnchorRepository struct {
-	models.AnchorRepository
+type MockAnchorRepository struct {
 	receivedCheckpoints []time.Time
+	requestStore        map[string]models.RequestStatus
+	shouldFailUpdate    bool
 }
 
-func (f *SpyAnchorRepository) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
-	f.receivedCheckpoints = append(f.receivedCheckpoints, since)
+func (m *MockAnchorRepository) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
+	m.receivedCheckpoints = append(m.receivedCheckpoints, since)
 
 	return []*models.AnchorRequestMessage{
 		{CreatedAt: since.Add(time.Minute * 1)},
@@ -25,81 +26,113 @@ func (f *SpyAnchorRepository) GetRequests(status models.RequestStatus, since tim
 	}, nil
 }
 
-type FakeStateRepository struct {
-	models.StateRepository
+func (m *MockAnchorRepository) UpdateStatus(ctx context.Context, status *models.RequestStatusMessage) error {
+	if m.shouldFailUpdate {
+		return fmt.Errorf("failed to update status")
+	}
+	if m.requestStore == nil {
+		m.requestStore = make(map[string]models.RequestStatus, 1)
+	}
+	m.requestStore[status.Id.String()] = status.Status
+	return nil
+}
+
+func (m *MockAnchorRepository) getNumUpdates() int {
+	return len(m.requestStore)
+}
+
+type MockStateRepository struct {
 	checkpoint time.Time
+	tipStore   map[string]*models.StreamTip
 	cidStore   map[string]bool
 }
 
-func (f *FakeStateRepository) GetCheckpoint(CheckpointType models.CheckpointType) (time.Time, error) {
-	return f.checkpoint, nil
+func (m *MockStateRepository) GetCheckpoint(CheckpointType models.CheckpointType) (time.Time, error) {
+	return m.checkpoint, nil
 }
 
-func (f *FakeStateRepository) UpdateCheckpoint(checkpointType models.CheckpointType, time time.Time) (bool, error) {
-	f.checkpoint = time
+func (m *MockStateRepository) UpdateCheckpoint(checkpointType models.CheckpointType, time time.Time) (bool, error) {
+	m.checkpoint = time
 	return true, nil
 }
 
-func (f *FakeStateRepository) StoreCid(streamCid *models.StreamCid) (bool, error) {
-	key := fmt.Sprint(streamCid)
-	val := f.cidStore[key]
-
+func (m *MockStateRepository) StoreCid(streamCid *models.StreamCid) (bool, error) {
+	if m.cidStore == nil {
+		m.cidStore = make(map[string]bool, 1)
+	}
+	key := fmt.Sprintf("%s_%s", streamCid.StreamId, streamCid.Cid)
+	val := m.cidStore[key]
 	if !val {
-		f.cidStore[key] = true
+		m.cidStore[key] = true
 		return true, nil
 	}
-
 	return false, nil
 }
 
-type FakeJobRepository struct {
+func (m *MockStateRepository) UpdateTip(newTip *models.StreamTip) (bool, *models.StreamTip, error) {
+	if m.tipStore == nil {
+		m.tipStore = make(map[string]*models.StreamTip, 1)
+	}
+	key := fmt.Sprintf("%s_%s", newTip.StreamId, newTip.Origin)
+	var oldTip *models.StreamTip = nil
+	var found bool
+	if oldTip, found = m.tipStore[key]; found {
+		if newTip.Timestamp.Before(oldTip.Timestamp) {
+			return false, nil, nil
+		}
+	}
+	m.tipStore[key] = newTip
+	return true, oldTip, nil
+}
+
+type MockJobRepository struct {
 	jobStore  map[string]bool
 	failCount int
 }
 
-func (f *FakeJobRepository) CreateJob() error {
-	if f.jobStore == nil {
-		f.jobStore = make(map[string]bool, 1)
+func (m *MockJobRepository) CreateJob() error {
+	if m.jobStore == nil {
+		m.jobStore = make(map[string]bool, 1)
 	}
-	if f.failCount > 0 {
-		f.failCount--
+	if m.failCount > 0 {
+		m.failCount--
 		return fmt.Errorf("failed to create job")
 	}
-	f.jobStore[uuid.New().String()] = true
+	m.jobStore[uuid.New().String()] = true
 	return nil
 }
 
-type FakePublisher struct {
+type MockPublisher struct {
 	messages    chan any
 	numAttempts int
 	errorOn     int
 }
 
-func (f *FakePublisher) SendMessage(ctx context.Context, event any) (string, error) {
+func (m *MockPublisher) SendMessage(ctx context.Context, event any) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", errors.New("context cancelled")
 	default:
-		f.numAttempts = f.numAttempts + 1
-		if f.numAttempts == f.errorOn {
+		m.numAttempts = m.numAttempts + 1
+		if m.numAttempts == m.errorOn {
 			return "", errors.New("TestError")
 		}
-		f.messages <- event
+		m.messages <- event
 		return "msgId", nil
 	}
 
 }
 
-type FakeBatchPublisher struct {
+type MockBatchPublisher struct {
 	messages chan any
 	fail     bool
 }
 
-func (f *FakeBatchPublisher) SendMessage(ctx context.Context, event any) (string, error) {
-	if f.fail {
+func (m *MockBatchPublisher) SendMessage(ctx context.Context, event any) (string, error) {
+	if m.fail {
 		return "", errors.New("test error")
 	}
-	f.messages <- event
+	m.messages <- event
 	return "msgId", nil
 
 }
@@ -113,18 +146,18 @@ func waitForMesssages(messageChannel chan any, n int) []any {
 	return messages
 }
 
-type FakeQueueMonitor struct {
+type MockQueueMonitor struct {
 	unprocessed int
 	inFlight    int
-	jobDb       *FakeJobRepository
+	jobDb       *MockJobRepository
 	failCount   int
 }
 
-func (f *FakeQueueMonitor) GetQueueUtilization(ctx context.Context) (int, int, error) {
-	if f.failCount > 0 {
-		f.failCount--
+func (m *MockQueueMonitor) GetQueueUtilization(ctx context.Context) (int, int, error) {
+	if m.failCount > 0 {
+		m.failCount--
 		return 0, 0, fmt.Errorf("failed to get utilization")
 	}
 	// Increment in flight by as many jobs as were created in the job DB and decrement unprocessed by the same number
-	return f.unprocessed - len(f.jobDb.jobStore), f.inFlight + len(f.jobDb.jobStore), nil
+	return m.unprocessed - len(m.jobDb.jobStore), m.inFlight + len(m.jobDb.jobStore), nil
 }

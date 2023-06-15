@@ -31,25 +31,25 @@ func TestBatch(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		publisher                        *FakePublisher
+		publisher                        *MockPublisher
 		expectedNumberOfRequestsPerBatch []int
 		shouldError                      bool
 		encodedRequests                  []string
 	}{
 		"Can create batches after linger and when full": {
-			publisher:                        &FakePublisher{messages: make(chan any, 2)},
+			publisher:                        &MockPublisher{messages: make(chan any, 2)},
 			expectedNumberOfRequestsPerBatch: []int{3, 2},
 			shouldError:                      false,
 			encodedRequests:                  encodedRequests,
 		},
 		"Should return error if requests are malformed": {
-			publisher:                        &FakePublisher{messages: make(chan any, 2)},
+			publisher:                        &MockPublisher{messages: make(chan any, 2)},
 			expectedNumberOfRequestsPerBatch: []int{},
 			shouldError:                      true,
 			encodedRequests:                  []string{"hello"},
 		},
 		"Should return error if cannot publish batch": {
-			publisher:                        &FakePublisher{messages: make(chan any, 2), errorOn: 1},
+			publisher:                        &MockPublisher{messages: make(chan any, 2), errorOn: 1},
 			expectedNumberOfRequestsPerBatch: []int{},
 			shouldError:                      true,
 			encodedRequests:                  encodedRequests[:3],

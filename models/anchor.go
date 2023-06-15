@@ -8,4 +8,5 @@ const (
 	RequestStatus_Completed
 	RequestStatus_Failed
 	RequestStatus_Ready
+	RequestStatus_Replaced
 )
