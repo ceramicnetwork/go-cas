@@ -30,6 +30,10 @@ type QueuePublisher interface {
 	SendMessage(ctx context.Context, event any) (string, error)
 }
 
+type QueueMonitor interface {
+	GetQueueUtilization(ctx context.Context) (int, int, error)
+}
+
 type Notifier interface {
 	SendAlert(string, string) error
 }
