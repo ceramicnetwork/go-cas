@@ -47,8 +47,9 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	// The greater-than-or-equal-to check also covers the case when two requests have the same timestamp though that is
 	// very unlikely given that the timestamps have millisecond resolution.
 	//
-	// If there's an error marking the old tip REPLACED, the old tip will just get anchored along with the new tip,
-	// which is ok because we'd rather anchor a few extra tips than miss anchoring some.
+	// If there's an error marking the old tip REPLACED, the old tip will get anchored along with the new tip, causing
+	// the new tip to be rejected in Ceramic via conflict resolution. While not ideal, this is no worse than what we
+	// have today.
 	if storedTip, oldTip, err := v.stateDb.UpdateTip(newTip); err != nil {
 		log.Printf("validate: failed to store tip: %v, %v", anchorReq, err)
 		return err

@@ -262,8 +262,9 @@ func (sdb *StateDatabase) UpdateTip(newTip *models.StreamTip) (bool, *models.Str
 				}); err != nil {
 				log.Printf("updateTip: error unmarshaling old tip: %v", err)
 				// We've written the new tip and lost the previous tip here. This means that we won't be able to mark
-				// the old tip REPLACED. As a result, the old tip will just get anchored along with the new tip, which
-				// is ok because we'd rather anchor a few extra tips than miss anchoring some.
+				// the old tip REPLACED. As a result, the old tip will get anchored along with the new tip, causing the
+				// new tip to be rejected in Ceramic via conflict resolution. While not ideal, this is no worse than
+				// what we have today.
 				return false, nil, err
 			}
 			return true, oldTip, nil

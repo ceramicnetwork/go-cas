@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestLaunch(t *testing.T) {
+func TestRun(t *testing.T) {
 	tests := map[string]struct {
 		monitor         *MockQueueMonitor
 		jobDb           *MockJobRepository

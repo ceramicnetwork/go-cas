@@ -134,7 +134,7 @@ func main() {
 	batchingService := services.NewBatchingService(batchQueue)
 	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
 
-	// The Validation Service reads from the Validate queue and posts to the Ready queue
+	// The Validation Service reads from the Validate queue and posts to the Ready and Status queues
 	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue)
 	queue.NewConsumer(validateQueue, validationService.Validate).Start()
 
