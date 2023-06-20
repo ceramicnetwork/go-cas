@@ -57,9 +57,9 @@ jobs:
       -
         name: Set commit status "pending"
         run: go run ci/cmd/status/main.go -s pending
-#      -
-#        name: Run unit tests
-#        run: go run ci/cmd/test/main.go
+      -
+        name: Run unit tests
+        run: go run ci/cmd/test/main.go
       -
         name: Set publish flag
         if: ${{ env.BRANCH == 'main' || env.BRANCH == 'release-candidate' || env.BRANCH == 'develop' }}
