@@ -17,23 +17,23 @@ type MockAnchorRepository struct {
 	shouldFailUpdate    bool
 }
 
-func (m *MockAnchorRepository) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
+func (m *MockAnchorRepository) GetRequests(_ context.Context, _ models.RequestStatus, since time.Time, _ int) ([]*models.AnchorRequest, error) {
 	m.receivedCheckpoints = append(m.receivedCheckpoints, since)
 
-	return []*models.AnchorRequestMessage{
+	return []*models.AnchorRequest{
 		{CreatedAt: since.Add(time.Minute * 1)},
 		{CreatedAt: since.Add(time.Minute * 2)},
 	}, nil
 }
 
-func (m *MockAnchorRepository) UpdateStatus(ctx context.Context, status *models.RequestStatusMessage) error {
+func (m *MockAnchorRepository) UpdateStatus(_ context.Context, id uuid.UUID, status models.RequestStatus, _ []models.RequestStatus) error {
 	if m.shouldFailUpdate {
 		return fmt.Errorf("failed to update status")
 	}
 	if m.requestStore == nil {
 		m.requestStore = make(map[string]models.RequestStatus, 1)
 	}
-	m.requestStore[status.Id.String()] = status.Status
+	m.requestStore[id.String()] = status
 	return nil
 }
 

@@ -37,15 +37,27 @@ func (rp RequestPoller) Run(ctx context.Context) {
 			return
 		default:
 			if anchorReqs, err := rp.anchorDb.GetRequests(
+				ctx,
 				models.RequestStatus_Pending,
 				since,
 				models.DbLoadLimit,
 			); err != nil {
 				log.Printf("requestpoll: error loading requests: %v", err)
 			} else if len(anchorReqs) > 0 {
+				anchorReqMsgs := make([]*models.AnchorRequestMessage, len(anchorReqs))
+				for idx, anchorReq := range anchorReqs {
+					anchorReqMsgs[idx] = &models.AnchorRequestMessage{
+						Id:        anchorReq.Id,
+						StreamId:  anchorReq.StreamId,
+						Cid:       anchorReq.Cid,
+						Origin:    anchorReq.Origin,
+						Timestamp: anchorReq.Timestamp,
+						CreatedAt: anchorReq.CreatedAt,
+					}
+				}
 				log.Printf("requestpoll: found %d requests newer than %s", len(anchorReqs), since)
 				// It's possible the checkpoint was updated even if a particular request in the batch failed to be queued
-				if nextCheckpoint := rp.sendRequestMessages(ctx, anchorReqs); nextCheckpoint.After(since) {
+				if nextCheckpoint := rp.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(since) {
 					log.Printf("requestpoll: old=%s, new=%s", since, nextCheckpoint)
 					if _, err = rp.stateDb.UpdateCheckpoint(models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
 						log.Printf("requestpoll: error updating checkpoint %s: %v", nextCheckpoint, err)
@@ -55,7 +67,6 @@ func (rp RequestPoller) Run(ctx context.Context) {
 						since = nextCheckpoint
 					}
 				}
-
 			}
 			// Sleep even if we had errors so that we don't get stuck in a tight loop
 			time.Sleep(models.DefaultTick)

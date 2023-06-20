@@ -3,11 +3,13 @@ package models
 import (
 	"context"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type AnchorRepository interface {
-	GetRequests(RequestStatus, time.Time, int) ([]*AnchorRequestMessage, error)
-	UpdateStatus(context.Context, *RequestStatusMessage) error
+	GetRequests(context.Context, RequestStatus, time.Time, int) ([]*AnchorRequest, error)
+	UpdateStatus(context.Context, uuid.UUID, RequestStatus, []RequestStatus) error
 }
 
 type StateRepository interface {
