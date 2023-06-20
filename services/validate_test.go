@@ -179,7 +179,7 @@ func testStatusMessage(t *testing.T, testMessage any, testStatus *models.Request
 }
 
 func generateTestData(id uuid.UUID, streamId, cid, origin string, delta time.Duration) (*models.AnchorRequestMessage, string, *models.StreamTip, *models.StreamCid, *models.RequestStatusMessage) {
-	now := time.Now().Round(0).Add(delta)
+	now := time.Now().Round(0).Add(delta).UTC()
 	anchorRequest := &models.AnchorRequestMessage{
 		Id:        id,
 		StreamId:  streamId,
