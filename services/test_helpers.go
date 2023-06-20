@@ -13,8 +13,13 @@ import (
 
 type MockAnchorRepository struct {
 	receivedCheckpoints []time.Time
-	requestStore        map[string]models.RequestStatus
+	requestStore        map[string]statusUpdate
 	shouldFailUpdate    bool
+}
+
+type statusUpdate struct {
+	status                models.RequestStatus
+	allowedSourceStatuses []models.RequestStatus
 }
 
 func (m *MockAnchorRepository) GetRequests(_ context.Context, _ models.RequestStatus, since time.Time, _ int) ([]*models.AnchorRequest, error) {
@@ -26,19 +31,23 @@ func (m *MockAnchorRepository) GetRequests(_ context.Context, _ models.RequestSt
 	}, nil
 }
 
-func (m *MockAnchorRepository) UpdateStatus(_ context.Context, id uuid.UUID, status models.RequestStatus, _ []models.RequestStatus) error {
+func (m *MockAnchorRepository) UpdateStatus(_ context.Context, id uuid.UUID, status models.RequestStatus, allowedSourceStatuses []models.RequestStatus) error {
 	if m.shouldFailUpdate {
 		return fmt.Errorf("failed to update status")
 	}
 	if m.requestStore == nil {
-		m.requestStore = make(map[string]models.RequestStatus, 1)
+		m.requestStore = make(map[string]statusUpdate, 1)
 	}
-	m.requestStore[id.String()] = status
+	m.requestStore[id.String()] = statusUpdate{status, allowedSourceStatuses}
 	return nil
 }
 
 func (m *MockAnchorRepository) getNumUpdates() int {
 	return len(m.requestStore)
+}
+
+func (m *MockAnchorRepository) getStatusUpdate(id uuid.UUID) statusUpdate {
+	return m.requestStore[id.String()]
 }
 
 type MockStateRepository struct {
