@@ -54,8 +54,8 @@ func TestStatus(t *testing.T) {
 				t.Errorf("db should have been updated")
 			} else {
 				statusUpd := test.anchorDb.getStatusUpdate(replacedStatusRequest.Id)
-				if statusUpd.status != replacedStatusRequest.Status {
-					t.Errorf("invalid status update: found=%v, expected=%v", statusUpd.status, replacedStatusRequest.Status)
+				if statusUpd.newStatus != replacedStatusRequest.Status {
+					t.Errorf("invalid status update: found=%v, expected=%v", statusUpd.newStatus, replacedStatusRequest.Status)
 				}
 				if !reflect.DeepEqual(statusUpd.allowedSourceStatuses, test.allowedSourceStatuses) {
 					t.Errorf("disallowed source status found: found=%v, expected=%v", statusUpd.allowedSourceStatuses, test.allowedSourceStatuses)

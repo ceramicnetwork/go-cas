@@ -18,7 +18,7 @@ type MockAnchorRepository struct {
 }
 
 type statusUpdate struct {
-	status                models.RequestStatus
+	newStatus             models.RequestStatus
 	allowedSourceStatuses []models.RequestStatus
 }
 
