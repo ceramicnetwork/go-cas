@@ -16,35 +16,34 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const stateIdTsIndex = "id-ts-index"
-const stateIdAnchorTsIndex = "id-ats-index"
-
 type StateDatabase struct {
 	client          *dynamodb.Client
-	streamTable     string
 	checkpointTable string
+	streamTable     string
+	tipTable        string
 }
 
 func NewStateDb(client *dynamodb.Client) *StateDatabase {
 	env := os.Getenv("ENV")
 
 	tablePfx := "cas-anchor-" + env + "-"
-	streamTable := tablePfx + "stream"
 	checkpointTable := tablePfx + "checkpoint"
+	streamTable := tablePfx + "stream"
+	tipTable := tablePfx + "tip"
 
 	sdb := StateDatabase{
 		client,
-		streamTable,
 		checkpointTable,
+		streamTable,
+		tipTable,
 	}
-
 	if err := sdb.createCheckpointTable(); err != nil {
 		log.Fatalf("state: checkpoint table creation failed: %v", err)
-	}
-	if err := sdb.createStreamTable(); err != nil {
+	} else if err = sdb.createStreamTable(); err != nil {
 		log.Fatalf("state: stream table creation failed: %v", err)
+	} else if err = sdb.createTipTable(); err != nil {
+		log.Fatalf("state: tip table creation failed: %v", err)
 	}
-
 	return &sdb
 }
 
@@ -72,7 +71,7 @@ func (sdb *StateDatabase) createCheckpointTable() error {
 }
 
 func (sdb *StateDatabase) createStreamTable() error {
-	createStreamTableInput := dynamodb.CreateTableInput{
+	createTableInput := dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
 				AttributeName: aws.String("id"),
@@ -81,14 +80,6 @@ func (sdb *StateDatabase) createStreamTable() error {
 			{
 				AttributeName: aws.String("cid"),
 				AttributeType: "S",
-			},
-			{
-				AttributeName: aws.String("ts"),
-				AttributeType: "N",
-			},
-			{
-				AttributeName: aws.String("ats"),
-				AttributeType: "N",
 			},
 		},
 		KeySchema: []types.KeySchemaElement{
@@ -106,50 +97,39 @@ func (sdb *StateDatabase) createStreamTable() error {
 			ReadCapacityUnits:  aws.Int64(1),
 			WriteCapacityUnits: aws.Int64(1),
 		},
-		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
+	}
+	return createTable(sdb.client, &createTableInput)
+}
+
+func (sdb *StateDatabase) createTipTable() error {
+	createTableInput := dynamodb.CreateTableInput{
+		AttributeDefinitions: []types.AttributeDefinition{
 			{
-				IndexName: aws.String(stateIdTsIndex),
-				KeySchema: []types.KeySchemaElement{
-					{
-						AttributeName: aws.String("id"),
-						KeyType:       "HASH",
-					},
-					{
-						AttributeName: aws.String("ts"),
-						KeyType:       "RANGE",
-					},
-				},
-				Projection: &types.Projection{
-					ProjectionType: types.ProjectionTypeAll,
-				},
-				ProvisionedThroughput: &types.ProvisionedThroughput{
-					ReadCapacityUnits:  aws.Int64(1),
-					WriteCapacityUnits: aws.Int64(1),
-				},
+				AttributeName: aws.String("id"),
+				AttributeType: "S",
 			},
 			{
-				IndexName: aws.String(stateIdAnchorTsIndex),
-				KeySchema: []types.KeySchemaElement{
-					{
-						AttributeName: aws.String("id"),
-						KeyType:       "HASH",
-					},
-					{
-						AttributeName: aws.String("ats"),
-						KeyType:       "RANGE",
-					},
-				},
-				Projection: &types.Projection{
-					ProjectionType: types.ProjectionTypeAll,
-				},
-				ProvisionedThroughput: &types.ProvisionedThroughput{
-					ReadCapacityUnits:  aws.Int64(1),
-					WriteCapacityUnits: aws.Int64(1),
-				},
+				AttributeName: aws.String("org"),
+				AttributeType: "S",
 			},
 		},
+		KeySchema: []types.KeySchemaElement{
+			{
+				AttributeName: aws.String("id"),
+				KeyType:       "HASH",
+			},
+			{
+				AttributeName: aws.String("org"),
+				KeyType:       "RANGE",
+			},
+		},
+		TableName: aws.String(sdb.tipTable),
+		ProvisionedThroughput: &types.ProvisionedThroughput{
+			ReadCapacityUnits:  aws.Int64(1),
+			WriteCapacityUnits: aws.Int64(1),
+		},
 	}
-	return createTable(sdb.client, &createStreamTableInput)
+	return createTable(sdb.client, &createTableInput)
 }
 
 func (sdb *StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Time, error) {
@@ -238,149 +218,66 @@ func (sdb *StateDatabase) StoreCid(streamCid *models.StreamCid) (bool, error) {
 	}
 }
 
-func (sdb *StateDatabase) GetCid(streamId, cid string) (*models.StreamCid, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
-	getItemIn := dynamodb.GetItemInput{
-		Key: map[string]types.AttributeValue{
-			"id":  &types.AttributeValueMemberS{Value: streamId},
-			"cid": &types.AttributeValueMemberS{Value: cid},
-		},
-		TableName: aws.String(sdb.streamTable),
-	}
-	getItemOut, err := sdb.client.GetItem(ctx, &getItemIn)
-	if err != nil {
-		return nil, err
-	}
-	if getItemOut.Item != nil {
-		streamCid := models.StreamCid{}
-		if err = attributevalue.UnmarshalMapWithOptions(getItemOut.Item, &streamCid); err != nil {
-			return nil, err
+func (sdb *StateDatabase) UpdateTip(newTip *models.StreamTip) (bool, *models.StreamTip, error) {
+	if attributeValues, err := attributevalue.MarshalMapWithOptions(newTip, func(options *attributevalue.EncoderOptions) {
+		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
+			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
 		}
-		return &streamCid, nil
-	}
-	return nil, nil
-}
-
-func (sdb *StateDatabase) GetTipCid(streamId string) (*models.StreamCid, error) {
-	var latest *models.StreamCid = nil
-	if err := sdb.iterateCids(
-		&dynamodb.QueryInput{
-			TableName:              aws.String(sdb.streamTable),
-			IndexName:              aws.String(stateIdTsIndex),
-			KeyConditionExpression: aws.String("#id = :id"),
-			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":id": &types.AttributeValueMemberS{Value: streamId},
-			},
-			ExpressionAttributeNames: map[string]string{
-				"#id": "id",
-			},
-			ScanIndexForward: aws.Bool(false), // descending
-		},
-		func(streamCid *models.StreamCid) bool {
-			latest = streamCid
-			return false // stop iteration after the first entry
-		},
-	); err != nil {
-		return nil, err
-	}
-	return latest, nil
-}
-
-func (sdb *StateDatabase) UpdateAnchorTs(streamId, cid string, anchorTs time.Time) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
-	updateItemIn := dynamodb.UpdateItemInput{
-		Key: map[string]types.AttributeValue{
-			"id":  &types.AttributeValueMemberS{Value: streamId},
-			"cid": &types.AttributeValueMemberS{Value: cid},
-		},
-		TableName:           aws.String(sdb.streamTable),
-		ConditionExpression: aws.String("attribute_not_exists(#ancTs)"),
-		ExpressionAttributeNames: map[string]string{
-			"#ancTs": "ats",
-		},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":ancTs": &types.AttributeValueMemberN{Value: strconv.FormatInt(anchorTs.Unix(), 10)},
-		},
-		UpdateExpression: aws.String("set #ancTs = :ancTs"),
-	}
-	if _, err := sdb.client.UpdateItem(ctx, &updateItemIn); err != nil {
-		// To get a specific API error
-		var condUpdErr *types.ConditionalCheckFailedException
-		if errors.As(err, &condUpdErr) {
-			// Not an error, just indicate that we couldn't update the entry
-			log.Printf("updateAnchorTs: anchor timestamp already set: %s, %s, %s, %v", streamId, cid, anchorTs, err)
-			return false, nil
-		}
-		log.Printf("updateAnchorTs: error writing to db: %v", err)
-		return false, err
-	}
-	return true, nil
-}
-
-func (sdb *StateDatabase) GetAnchoredCid(streamId, cid string) (*models.StreamCid, error) {
-	if streamCid, err := sdb.GetCid(streamId, cid); err != nil {
-		return nil, err
-	} else if streamCid.AnchorTs != nil {
-		return streamCid, nil
+	}); err != nil {
+		return false, nil, err
 	} else {
-		var anchoredCid *models.StreamCid = nil
-		if err = sdb.iterateCids(
-			&dynamodb.QueryInput{
-				TableName:              aws.String(sdb.streamTable),
-				IndexName:              aws.String(stateIdAnchorTsIndex),
-				KeyConditionExpression: aws.String("#id = :id and #ancTs >= :ts"),
-				ExpressionAttributeValues: map[string]types.AttributeValue{
-					":id": &types.AttributeValueMemberS{Value: streamId},
-					":ts": &types.AttributeValueMemberN{Value: strconv.FormatInt(streamCid.Timestamp.Unix(), 10)},
-				},
-				ExpressionAttributeNames: map[string]string{
-					"#id":    "id",
-					"#ancTs": "ats",
-				},
-				ScanIndexForward: aws.Bool(true), // ascending
+		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+		defer cancel()
+
+		// Deduplicate stream tips
+		putItemIn := dynamodb.PutItemInput{
+			TableName:                aws.String(sdb.tipTable),
+			ConditionExpression:      aws.String("attribute_not_exists(#id) OR (#ts <= :ts)"),
+			ExpressionAttributeNames: map[string]string{"#id": "id", "#ts": "ts"},
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":ts": &types.AttributeValueMemberN{Value: strconv.FormatInt(newTip.Timestamp.UnixMilli(), 10)},
 			},
-			func(streamCid *models.StreamCid) bool {
-				anchoredCid = streamCid
-				return false // stop iteration after the first entry
-			},
-		); err != nil {
-			return nil, err
+			Item:         attributeValues,
+			ReturnValues: types.ReturnValueAllOld,
 		}
-		return anchoredCid, nil
+		if putItemOut, err := sdb.client.PutItem(ctx, &putItemIn); err != nil {
+			// To get a specific API error
+			var condUpdErr *types.ConditionalCheckFailedException
+			if errors.As(err, &condUpdErr) {
+				// Not an error, just indicate that we couldn't write the entry.
+				return false, nil, nil
+			}
+			log.Printf("updateTip: error writing to db: %v", err)
+			return false, nil, err
+		} else if len(putItemOut.Attributes) > 0 {
+			oldTip := new(models.StreamTip)
+			if err = attributevalue.UnmarshalMapWithOptions(
+				putItemOut.Attributes,
+				oldTip,
+				func(options *attributevalue.DecoderOptions) {
+					options.DecodeTime = attributevalue.DecodeTimeAttributes{
+						S: sdb.tsDecode,
+						N: sdb.tsDecode,
+					}
+				}); err != nil {
+				log.Printf("updateTip: error unmarshaling old tip: %v", err)
+				// We've written the new tip and lost the previous tip here. This means that we won't be able to mark
+				// the old tip REPLACED. As a result, the old tip will get anchored along with the new tip, causing the
+				// new tip to be rejected in Ceramic via conflict resolution. While not ideal, this is no worse than
+				// what we have today.
+				return false, nil, err
+			}
+			return true, oldTip, nil
+		}
+		// We wrote a new tip but did not have an old tip to return
+		return true, nil, nil
 	}
 }
 
-func (sdb *StateDatabase) iterateCids(queryInput *dynamodb.QueryInput, iter func(*models.StreamCid) bool) error {
-	p := dynamodb.NewQueryPaginator(sdb.client, queryInput)
-	for p.HasMorePages() {
-		err := func() error {
-			ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-			defer cancel()
-
-			page, err := p.NextPage(ctx)
-			if err != nil {
-				return err
-			}
-			var streamCidPage []*models.StreamCid
-			err = attributevalue.UnmarshalListOfMapsWithOptions(page.Items, &streamCidPage)
-			if err != nil {
-				log.Printf("iterateCids: unable to unmarshal entry: %v", err)
-				return err
-			}
-			for _, streamCid := range streamCidPage {
-				if !iter(streamCid) {
-					return nil
-				}
-			}
-			return nil
-		}()
-		if err != nil {
-			return err
-		}
+func (sdb *StateDatabase) tsDecode(ts string) (time.Time, error) {
+	msec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return time.Time{}, err
 	}
-	return nil
+	return time.UnixMilli(msec), nil
 }

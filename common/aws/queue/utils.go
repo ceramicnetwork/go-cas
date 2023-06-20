@@ -21,6 +21,7 @@ const (
 	QueueType_Validate QueueType = "validate"
 	QueueType_Ready    QueueType = "ready"
 	QueueType_Batch    QueueType = "batch"
+	QueueType_Status   QueueType = "status"
 	QueueType_Failure  QueueType = "failure"
 	QueueType_DLQ      QueueType = "dlq"
 )
@@ -56,7 +57,7 @@ func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *Queu
 	defer cancel()
 
 	if createQueueOut, err := sqsClient.CreateQueue(ctx, &createQueueIn); err != nil {
-		return "", nil
+		return "", err
 	} else {
 		return *createQueueOut.QueueUrl, nil
 	}
@@ -65,13 +66,18 @@ func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *Queu
 func GetQueueUtilization(ctx context.Context, queueUrl string, sqsClient *sqs.Client) (int, int, error) {
 	if queueAttr, err := getQueueAttributes(ctx, queueUrl, sqsClient); err != nil {
 		return 0, 0, err
-	} else if numMsgsUnprocessed, err := strconv.Atoi(queueAttr[string(types.QueueAttributeNameApproximateNumberOfMessages)]); err != nil {
-		return 0, 0, err
-	} else if numMsgsInFlight, err := strconv.Atoi(queueAttr[string(types.QueueAttributeNameApproximateNumberOfMessagesNotVisible)]); err != nil {
-		return 0, 0, err
-	} else {
-		return numMsgsUnprocessed, numMsgsInFlight, nil
+	} else if numMsgsUnprocessedStr, found := queueAttr[string(types.QueueAttributeNameApproximateNumberOfMessages)]; found {
+		if numMsgsUnprocessed, err := strconv.Atoi(numMsgsUnprocessedStr); err != nil {
+			return 0, 0, err
+		} else if numMsgsInFlightStr, found := queueAttr[string(types.QueueAttributeNameApproximateNumberOfMessagesNotVisible)]; found {
+			if numMsgsInFlight, err := strconv.Atoi(numMsgsInFlightStr); err != nil {
+				return 0, 0, err
+			} else {
+				return numMsgsUnprocessed, numMsgsInFlight, nil
+			}
+		}
 	}
+	return 0, 0, nil
 }
 
 func GetQueueUrl(queueType QueueType, sqsClient *sqs.Client) (string, error) {

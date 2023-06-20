@@ -17,15 +17,6 @@ type AnchorDatabase struct {
 	opts AnchorDbOpts
 }
 
-type anchorRequest struct {
-	Id        uuid.UUID
-	Cid       string
-	StreamId  string
-	CreatedAt time.Time
-	Timestamp time.Time
-	Metadata  *models.StreamMetadata
-}
-
 type AnchorDbOpts struct {
 	Host     string
 	Port     string
@@ -38,35 +29,13 @@ func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
 	return &AnchorDatabase{opts}
 }
 
-func (adb *AnchorDatabase) GetRequests(status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequestMessage, error) {
-	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.created_at, REQ.timestamp, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
-	anchorRequests, err := adb.query(
-		query,
-		status,
-		since.Format(models.DbDateFormat),
-		limit,
-	)
-	if err != nil {
-		return nil, err
-	} else if len(anchorRequests) > 0 {
-		anchorReqMsgs := make([]*models.AnchorRequestMessage, len(anchorRequests))
-		for idx, anchorReq := range anchorRequests {
-			anchorReqMsgs[idx] = &models.AnchorRequestMessage{
-				Id:        anchorReq.Id,
-				StreamId:  anchorReq.StreamId,
-				Cid:       anchorReq.Cid,
-				Timestamp: anchorReq.Timestamp,
-				Metadata:  anchorReq.Metadata,
-				CreatedAt: anchorReq.CreatedAt,
-			}
-		}
-		return anchorReqMsgs, nil
-	}
-	return nil, nil
+func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequest, error) {
+	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
+	return adb.query(ctx, query, status, since.Format(models.DbDateFormat), limit)
 }
 
-func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, error) {
-	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) ([]*models.AnchorRequest, error) {
+	dbCtx, dbCancel := context.WithTimeout(ctx, models.DefaultDbWaitTime)
 	defer dbCancel()
 
 	connUrl := fmt.Sprintf(
@@ -82,24 +51,25 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 		log.Printf("query: error connecting to db: %v", err)
 		return nil, err
 	}
-	defer conn.Close(context.Background())
+	defer conn.Close(dbCtx)
 
-	rows, err := conn.Query(context.Background(), sql, args...)
+	rows, err := conn.Query(dbCtx, sql, args...)
 	if err != nil {
 		log.Printf("query: error querying db: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
 
-	anchorRequests := make([]*anchorRequest, 0)
+	anchorRequests := make([]*models.AnchorRequest, 0)
 	for rows.Next() {
-		anchorReq := new(anchorRequest)
+		anchorReq := new(models.AnchorRequest)
 		err = rows.Scan(
 			&anchorReq.Id,
 			&anchorReq.Cid,
 			&anchorReq.StreamId,
-			&anchorReq.CreatedAt,
+			&anchorReq.Origin,
 			&anchorReq.Timestamp,
+			&anchorReq.CreatedAt,
 			&anchorReq.Metadata,
 		)
 		if err != nil {
@@ -111,8 +81,8 @@ func (adb *AnchorDatabase) query(sql string, args ...any) ([]*anchorRequest, err
 	return anchorRequests, nil
 }
 
-func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatus, message string) error {
-	dbCtx, dbCancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
+func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, status models.RequestStatus, allowedSourceStatuses []models.RequestStatus) error {
+	dbCtx, dbCancel := context.WithTimeout(ctx, models.DefaultDbWaitTime)
 	defer dbCancel()
 
 	connUrl := fmt.Sprintf(
@@ -128,12 +98,20 @@ func (adb *AnchorDatabase) UpdateStatus(id uuid.UUID, status models.RequestStatu
 		log.Printf("update: error connecting to db: %v", err)
 		return err
 	}
-	defer conn.Close(context.Background())
+	defer conn.Close(dbCtx)
 
+	condition := ""
+	if len(allowedSourceStatuses) > 0 {
+		condition = " AND (status = " + string(allowedSourceStatuses[0])
+		for i := 1; i < len(allowedSourceStatuses); i++ {
+			condition = fmt.Sprintf("%s OR status = %s", condition, string(allowedSourceStatuses[i]))
+		}
+		condition += ")"
+	}
 	_, err = conn.Exec(
-		context.Background(), "UPDATE request SET status = $1, message = $2, updated_at = $3 WHERE id = $4",
+		dbCtx,
+		"UPDATE request SET status = $1, updated_at = $3 WHERE id = $4"+condition,
 		status,
-		message,
 		time.Now().UTC(),
 		id,
 	)

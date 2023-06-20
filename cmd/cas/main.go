@@ -14,6 +14,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
+	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/ceramicnetwork/go-cas/services"
@@ -33,6 +34,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("error creating aws cfg: %v", err)
 	}
+
+	anchorDb := db.NewAnchorDb(db.AnchorDbOpts{
+		Host:     os.Getenv("PG_HOST"),
+		Port:     os.Getenv("PG_PORT"),
+		User:     os.Getenv("PG_USER"),
+		Password: os.Getenv("PG_PASSWORD"),
+		Name:     os.Getenv("PG_DB"),
+	})
 
 	// Use override endpoint, if specified, for state DB so that we can store jobs locally, while hitting regular AWS
 	// endpoints for other operations. This allows local testing without affecting live processes in AWS.
@@ -99,6 +108,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create batch queue: %v", err)
 	}
+	statusQueue, err := queue.NewPublisher(queue.QueueType_Status, sqsClient, redrivePolicy)
+	if err != nil {
+		log.Fatalf("failed to create status queue: %v", err)
+	}
 	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
 	// failures could put messages back in the DLQ that are then re-consumed by the handler.
 	failureQueue, err := queue.NewPublisher(queue.QueueType_Failure, sqsClient, redrivePolicy)
@@ -108,23 +121,29 @@ func main() {
 	// Start the queue consumers. These consumers will be responsible for scaling event processing up based on load, and
 	// also maintaining backpressure on the queues.
 
-	// The Batching Service reads from the Ready queue and posts to the Batch queue
-	batchingService := services.NewBatchingService(batchQueue)
-	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
-
-	// The Validation Service reads from the Validate queue and posts to the Ready queue
-	validationService := services.NewValidationService(stateDb, readyQueue)
-	queue.NewConsumer(validateQueue, validationService.Validate).Start()
-
 	// The Failure handling Service reads from the Failure and Dead-Letter queues
 	failureHandlingService := services.NewFailureHandlingService(discordHandler)
 	queue.NewConsumer(failureQueue, failureHandlingService.Failure).Start()
 	queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ).Start()
 
+	// The Status Service reads from the Status queue and updates the Anchor DB
+	statusService := services.NewStatusService(anchorDb)
+	queue.NewConsumer(statusQueue, statusService.Status).Start()
+
+	// The Batching Service reads from the Ready queue and posts to the Batch queue
+	batchingService := services.NewBatchingService(batchQueue)
+	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
+
+	// The Validation Service reads from the Validate queue and posts to the Ready and Status queues
+	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue)
+	queue.NewConsumer(validateQueue, validationService.Validate).Start()
+
 	// Start the polling services last
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	// Monitor the Batch queue and spawn anchor workers accordingly
-	go services.NewWorkerService(queue.NewMonitor(batchQueue.QueueUrl, sqsClient), jobDb).Launch(context.Background())
+	go services.NewWorkerService(queue.NewMonitor(batchQueue.QueueUrl, sqsClient), jobDb).Run(context.Background())
+	// Poll the Anchor DB for unprocessed requests and post to the Validate queue
+	// go services.NewRequestPoller(anchorDb, stateDb, validateQueue).Run(context.Background())
 	wg.Wait()
 }

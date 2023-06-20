@@ -34,7 +34,7 @@ func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobReposito
 	return &WorkerService{batchMonitor, jobDb, batchMonitorTick, maxAnchorWorkers}
 }
 
-func (w WorkerService) Launch(ctx context.Context) {
+func (w WorkerService) Run(ctx context.Context) {
 	tick := time.NewTicker(w.monitorTick)
 	for {
 		select {
