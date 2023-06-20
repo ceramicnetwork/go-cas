@@ -12,8 +12,8 @@ import (
 )
 
 func TestStatus(t *testing.T) {
-	requestId := uuid.New()
-	replacedStatus, _ := json.Marshal(models.RequestStatusMessage{Id: requestId, Status: models.RequestStatus_Replaced})
+	replacedStatusRequest := models.RequestStatusMessage{Id: uuid.New(), Status: models.RequestStatus_Replaced}
+	replacedStatus, _ := json.Marshal(replacedStatusRequest)
 	tests := map[string]struct {
 		anchorDb              *MockAnchorRepository
 		statusRequestStr      string
@@ -53,9 +53,12 @@ func TestStatus(t *testing.T) {
 			} else if test.anchorDb.getNumUpdates() != 1 {
 				t.Errorf("db should have been updated")
 			} else {
-				dbAllowedSourceStatuses := test.anchorDb.getStatusUpdate(requestId).allowedSourceStatuses
-				if !reflect.DeepEqual(test.allowedSourceStatuses, dbAllowedSourceStatuses) {
-					t.Errorf("disallowed source status found: found=%v, expected=%v", dbAllowedSourceStatuses, test.allowedSourceStatuses)
+				statusUpd := test.anchorDb.getStatusUpdate(replacedStatusRequest.Id)
+				if statusUpd.status != replacedStatusRequest.Status {
+					t.Errorf("invalid status update: found=%v, expected=%v", statusUpd.status, replacedStatusRequest.Status)
+				}
+				if !reflect.DeepEqual(statusUpd.allowedSourceStatuses, test.allowedSourceStatuses) {
+					t.Errorf("disallowed source status found: found=%v, expected=%v", statusUpd.allowedSourceStatuses, test.allowedSourceStatuses)
 				}
 			}
 		})
