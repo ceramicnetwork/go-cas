@@ -1,10 +1,6 @@
 package models
 
-import (
-	"time"
-
-	"github.com/google/uuid"
-)
+import "time"
 
 type CheckpointType string
 
@@ -27,7 +23,7 @@ type StreamCid struct {
 type StreamTip struct {
 	StreamId  string    `dynamodbav:"id"`  // hash key
 	Origin    string    `dynamodbav:"org"` // range key
-	Id        uuid.UUID `dynamodbav:"rid"`
+	Id        string    `dynamodbav:"rid"`
 	Cid       string    `dynamodbav:"cid"`
 	Timestamp time.Time `dynamodbav:"ts"`
 	CreatedAt time.Time `dynamodbav:"crt,unixtime"` // can be used as TTL

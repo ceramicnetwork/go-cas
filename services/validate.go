@@ -33,7 +33,7 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	newTip := &models.StreamTip{
 		StreamId:  anchorReq.StreamId,
 		Origin:    anchorReq.Origin,
-		Id:        anchorReq.Id,
+		Id:        anchorReq.Id.String(),
 		Cid:       anchorReq.Cid,
 		Timestamp: anchorReq.Timestamp,
 		CreatedAt: anchorReq.CreatedAt,
@@ -66,7 +66,8 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 		isReprocessedTip := (oldTip != nil) && (oldTip.Id == newTip.Id)
 		// Only mark the old tip REPLACED if it actually was an older tip and not just the same tip retried
 		if (oldTip != nil) && !isReprocessedTip {
-			if err = v.sendStatusMsg(ctx, oldTip.Id, models.RequestStatus_Replaced); err != nil {
+			requestId, _ := uuid.Parse(oldTip.Id)
+			if err = v.sendStatusMsg(ctx, requestId, models.RequestStatus_Replaced); err != nil {
 				return err
 			}
 		}
@@ -88,8 +89,8 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	return nil
 }
 
-func (v ValidationService) sendStatusMsg(ctx context.Context, requestId uuid.UUID, status models.RequestStatus) error {
-	statusMsg := &models.RequestStatusMessage{Id: requestId, Status: status}
+func (v ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {
+	statusMsg := &models.RequestStatusMessage{Id: id, Status: status}
 	if _, err := v.statusPublisher.SendMessage(ctx, statusMsg); err != nil {
 		log.Printf("validate: failed to send status message: %v, %v", statusMsg, err)
 		return err

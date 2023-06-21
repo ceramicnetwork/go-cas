@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -102,15 +103,15 @@ func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 
 	condition := ""
 	if len(allowedSourceStatuses) > 0 {
-		condition = " AND (status = " + string(allowedSourceStatuses[0])
+		condition = " AND (status = " + strconv.Itoa(int(allowedSourceStatuses[0]))
 		for i := 1; i < len(allowedSourceStatuses); i++ {
-			condition = fmt.Sprintf("%s OR status = %s", condition, string(allowedSourceStatuses[i]))
+			condition = fmt.Sprintf("%s OR status = %s", condition, strconv.Itoa(int(allowedSourceStatuses[i])))
 		}
 		condition += ")"
 	}
 	_, err = conn.Exec(
 		dbCtx,
-		"UPDATE request SET status = $1, updated_at = $3 WHERE id = $4"+condition,
+		"UPDATE request SET status = $1, updated_at = $2 WHERE id = $3"+condition,
 		status,
 		time.Now().UTC(),
 		id,

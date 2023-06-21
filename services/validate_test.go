@@ -194,7 +194,7 @@ func generateTestData(id uuid.UUID, streamId, cid, origin string, delta time.Dur
 		&models.StreamTip{
 			StreamId:  anchorRequest.StreamId,
 			Origin:    anchorRequest.Origin,
-			Id:        anchorRequest.Id,
+			Id:        anchorRequest.Id.String(),
 			Cid:       anchorRequest.Cid,
 			Timestamp: anchorRequest.Timestamp,
 			CreatedAt: anchorRequest.CreatedAt,
