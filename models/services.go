@@ -34,3 +34,8 @@ type QueueMonitor interface {
 type Notifier interface {
 	SendAlert(string, string) error
 }
+
+type MetricService interface {
+	Count(ctx context.Context, name string, val int) error
+	Shutdown(ctx context.Context)
+}

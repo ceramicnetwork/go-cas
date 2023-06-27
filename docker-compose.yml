@@ -66,8 +66,7 @@ services:
       - DB_PORT=5432
       - DB_USERNAME=root
       - DB_PASSWORD=root
-      - SQS_URL=http://localstack:4566/000000000000/cas-anchor-dev-batch
-      - SQS_QUEUE_USE_POLLING=true
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-
       - AWS_ACCOUNT_ID=000000000000
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=.
@@ -90,7 +89,9 @@ services:
       replicas: 1
 
   cas_api:
-    image: ceramicnetwork/ceramic-anchor-service:release-candidate
+    build:
+      context: ../ceramic-anchor-service
+      target: base
     container_name: cas_api
     environment:
       - NODE_ENV=dev
@@ -119,6 +120,11 @@ services:
       - DB_USERNAME=root
       - DB_PASSWORD=root
       - VALIDATE_RECORDS=false
+      - AWS_ACCOUNT_ID=000000000000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=.
+      - AWS_SECRET_ACCESS_KEY=.
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-
     depends_on:
       cas_ipfs:
         condition: service_healthy

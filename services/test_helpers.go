@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -169,4 +171,27 @@ func (m *MockQueueMonitor) GetQueueUtilization(ctx context.Context) (int, int, e
 	}
 	// Increment in flight by as many jobs as were created in the job DB and decrement unprocessed by the same number
 	return m.unprocessed - len(m.jobDb.jobStore), m.inFlight + len(m.jobDb.jobStore), nil
+}
+
+type MockMetricService struct {
+	counts map[string]int
+}
+
+func (m *MockMetricService) Count(ctx context.Context, name string, val int) error {
+	if m.counts == nil {
+		m.counts = make(map[string]int)
+	}
+	m.counts[name] = m.counts[name] + val
+	return nil
+}
+
+func (m *MockMetricService) Shutdown(ctx context.Context) {
+}
+
+func Assert(t *testing.T, expected any, received any, message string) {
+	if expected != received {
+		if !reflect.DeepEqual(expected, received) {
+			t.Errorf(message+": expected %v, received %v", expected, received)
+		}
+	}
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/common/db"
+	"github.com/ceramicnetwork/go-cas/common/metrics"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/ceramicnetwork/go-cas/services"
@@ -66,6 +67,12 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create discord handler: %v", err)
 	}
+
+	metricService, err := metrics.NewMetricService(context.Background())
+	if err != nil {
+		log.Fatalf("failed to create metric service: %v", err)
+	}
+	defer metricService.Shutdown(context.Background())
 
 	// Flow:
 	// ====
@@ -131,11 +138,11 @@ func main() {
 	queue.NewConsumer(statusQueue, statusService.Status).Start()
 
 	// The Batching Service reads from the Ready queue and posts to the Batch queue
-	batchingService := services.NewBatchingService(batchQueue)
+	batchingService := services.NewBatchingService(batchQueue, metricService)
 	queue.NewConsumer(readyQueue, batchingService.Batch).Start()
 
 	// The Validation Service reads from the Validate queue and posts to the Ready and Status queues
-	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue)
+	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue, metricService)
 	queue.NewConsumer(validateQueue, validationService.Validate).Start()
 
 	// Start the polling services last

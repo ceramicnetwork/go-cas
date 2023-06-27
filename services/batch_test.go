@@ -58,7 +58,8 @@ func TestBatch(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			batchingServices := NewBatchingService(test.publisher)
+			metricService := &MockMetricService{}
+			batchingServices := NewBatchingService(test.publisher, metricService)
 			ctx, cancel := context.WithCancel(context.Background())
 
 			var wg sync.WaitGroup
@@ -88,6 +89,7 @@ func TestBatch(t *testing.T) {
 				if len(test.publisher.messages) != 0 {
 					t.Errorf("Received %v messages but should have received none", len(test.publisher.messages))
 				}
+				Assert(t, 0, metricService.counts[models.CreatedBatchMetricName], "Incorrect created batch count")
 			} else {
 				// with 5 requests 2 batches should have been created
 				receivedMessages := waitForMesssages(test.publisher.messages, 2)
@@ -111,6 +113,8 @@ func TestBatch(t *testing.T) {
 						t.Errorf("Expected %v requests in batch %v. Contained %v requests", numRequestsInBatch, i+1, len(receivedBatches[i].Ids))
 					}
 				}
+
+				Assert(t, 2, metricService.counts[models.CreatedBatchMetricName], "Incorrect created batch count")
 			}
 		})
 	}

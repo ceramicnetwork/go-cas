@@ -20,3 +20,8 @@ const ServiceName = "cas-scheduler"
 const (
 	Env_EnvTag = "ENV_TAG"
 )
+
+// Metrics
+// Counts
+const CreatedBatchMetricName = "created_batch"
+const ReplactedRequestMetricName = "replaced_request"
