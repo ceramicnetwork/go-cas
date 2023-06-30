@@ -174,12 +174,12 @@ func (m *MockQueueMonitor) GetQueueUtilization(ctx context.Context) (int, int, e
 }
 
 type MockMetricService struct {
-	counts map[string]int
+	counts map[models.MetricName]int
 }
 
-func (m *MockMetricService) Count(ctx context.Context, name string, val int) error {
+func (m *MockMetricService) Count(ctx context.Context, name models.MetricName, val int) error {
 	if m.counts == nil {
-		m.counts = make(map[string]int)
+		m.counts = make(map[models.MetricName]int)
 	}
 	m.counts[name] = m.counts[name] + val
 	return nil

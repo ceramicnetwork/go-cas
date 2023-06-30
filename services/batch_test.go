@@ -89,7 +89,7 @@ func TestBatch(t *testing.T) {
 				if len(test.publisher.messages) != 0 {
 					t.Errorf("Received %v messages but should have received none", len(test.publisher.messages))
 				}
-				Assert(t, 0, metricService.counts[models.CreatedBatchMetricName], "Incorrect created batch count")
+				Assert(t, 0, metricService.counts[models.MetricName_CreatedBatch], "Incorrect created batch count")
 			} else {
 				// with 5 requests 2 batches should have been created
 				receivedMessages := waitForMesssages(test.publisher.messages, 2)
@@ -114,7 +114,7 @@ func TestBatch(t *testing.T) {
 					}
 				}
 
-				Assert(t, 2, metricService.counts[models.CreatedBatchMetricName], "Incorrect created batch count")
+				Assert(t, 2, metricService.counts[models.MetricName_CreatedBatch], "Incorrect created batch count")
 			}
 		})
 	}

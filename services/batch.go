@@ -68,7 +68,7 @@ func (b BatchingService) batch(anchorReqs []*models.AnchorRequestMessage) ([]res
 		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}
-	b.metricService.Count(context.Background(), models.CreatedBatchMetricName, 1)
+	b.metricService.Count(context.Background(), models.MetricName_CreatedBatch, 1)
 	log.Printf("batch: generated batch: %v", anchorReqBatch)
 	return batchResults, nil
 }

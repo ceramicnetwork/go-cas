@@ -22,6 +22,10 @@ const (
 )
 
 // Metrics
+type MetricName string
+
 // Counts
-const CreatedBatchMetricName = "created_batch"
-const ReplactedRequestMetricName = "replaced_request"
+const (
+	MetricName_CreatedBatch    MetricName = "created_batch"
+	MetricName_ReplacedRequest MetricName = "replaced_request"
+)

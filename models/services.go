@@ -36,6 +36,6 @@ type Notifier interface {
 }
 
 type MetricService interface {
-	Count(ctx context.Context, name string, val int) error
+	Count(ctx context.Context, name MetricName, val int) error
 	Shutdown(ctx context.Context)
 }

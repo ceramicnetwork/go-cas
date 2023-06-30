@@ -68,7 +68,8 @@ func main() {
 		log.Fatalf("failed to create discord handler: %v", err)
 	}
 
-	metricService, err := metrics.NewMetricService(context.Background())
+	collectorHost := os.Getenv("COLLECTOR_HOST")
+	metricService, err := metrics.NewMetricService(context.Background(), collectorHost)
 	if err != nil {
 		log.Fatalf("failed to create metric service: %v", err)
 	}

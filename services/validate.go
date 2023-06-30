@@ -61,7 +61,7 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 		return err
 	} else if !storedTip {
 		// Mark the current request REPLACED because we found a newer stream/origin timestamp in the DB
-		v.metricService.Count(ctx, models.ReplactedRequestMetricName, 1)
+		v.metricService.Count(ctx, models.MetricName_ReplacedRequest, 1)
 		return v.sendStatusMsg(ctx, anchorReq.Id, models.RequestStatus_Replaced)
 	} else {
 		// Having the same request ID means that a newer tip failed to get completely processed previously
@@ -69,7 +69,7 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 		// Only mark the old tip REPLACED if it actually was an older tip and not just the same tip retried
 		if (oldTip != nil) && !isReprocessedTip {
 			requestId, _ := uuid.Parse(oldTip.Id)
-			v.metricService.Count(ctx, models.ReplactedRequestMetricName, 1)
+			v.metricService.Count(ctx, models.MetricName_ReplacedRequest, 1)
 			if err = v.sendStatusMsg(ctx, requestId, models.RequestStatus_Replaced); err != nil {
 				return err
 			}
@@ -81,7 +81,7 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 			// Mark the current request REPLACED if we found the stream/CID in the DB and this was not a reprocessed
 			// tip. A reprocessed request's stream/CID might already have been stored in the DB, and we don't want to
 			// skip this request because we know it wasn't fully processed the last time it came through.
-			v.metricService.Count(ctx, models.ReplactedRequestMetricName, 1)
+			v.metricService.Count(ctx, models.MetricName_ReplacedRequest, 1)
 			return v.sendStatusMsg(ctx, anchorReq.Id, models.RequestStatus_Replaced)
 		} else
 		// This request has been fully de-duplicated so send it to the next stage
