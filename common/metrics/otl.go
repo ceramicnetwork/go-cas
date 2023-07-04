@@ -3,7 +3,6 @@ package metrics
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -36,8 +35,7 @@ func NewMetricService(ctx context.Context, collectorHost string) (models.MetricS
 
 	var exporter sdk.Exporter
 	if collectorHost != "" {
-		collectorUrl := fmt.Sprintf("http://%s:4318/v1/metrics", collectorHost)
-		options := otlpmetrichttp.WithEndpoint(collectorUrl)
+		options := otlpmetrichttp.WithEndpoint("%s:4318")
 		exporter, err = otlpmetrichttp.New(ctx, options)
 		if err != nil {
 			return &OtlMetricService{}, err
