@@ -35,20 +35,22 @@ func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobReposito
 }
 
 func (w WorkerService) Run(ctx context.Context) {
+	log.Printf("worker: started")
 	tick := time.NewTicker(w.monitorTick)
 	for {
 		select {
 		case <-ctx.Done():
+			log.Printf("worker: stopped")
 			return
 		case <-tick.C:
-			numJobsCreated, err := w.launch()
+			numJobsCreated, err := w.launch(ctx)
 			log.Printf("worker: created %d jobs, error = %v", numJobsCreated, err)
 		}
 	}
 }
 
-func (w WorkerService) launch() (int, error) {
-	if numBatchesUnprocessed, numBatchesInFlight, err := w.batchMonitor.GetQueueUtilization(context.Background()); err != nil {
+func (w WorkerService) launch(ctx context.Context) (int, error) {
+	if numBatchesUnprocessed, numBatchesInFlight, err := w.batchMonitor.GetQueueUtilization(ctx); err != nil {
 		return 0, err
 	} else {
 		// The number of unprocessed batches can be used to determine the ingress load on the anchoring system.
@@ -68,7 +70,7 @@ func (w WorkerService) launch() (int, error) {
 		numJobsToCreate := int(math.Min(float64(numJobsAllowed), float64(numBatchesUnprocessed)))
 		var numJobsCreated int
 		for numJobsCreated = 0; numJobsCreated < numJobsToCreate; numJobsCreated++ {
-			if err = w.jobDb.CreateJob(); err != nil {
+			if err = w.jobDb.CreateJob(ctx); err != nil {
 				break
 			}
 		}

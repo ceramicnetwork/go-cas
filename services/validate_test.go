@@ -14,6 +14,7 @@ import (
 
 func TestPublishNewTip(t *testing.T) {
 	anchorRequest, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	testCtx := context.Background()
 
 	t.Run("publish request if tip does not already exist", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
@@ -21,7 +22,7 @@ func TestPublishNewTip(t *testing.T) {
 		metricService := &MockMetricService{}
 
 		validator := NewValidationService(stateRepo, readyPublisher, nil, metricService)
-		if err := validator.Validate(context.Background(), encodedRequest); err != nil {
+		if err := validator.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
@@ -37,11 +38,11 @@ func TestPublishNewTip(t *testing.T) {
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		stateRepo.UpdateTip(streamTip)
-		stateRepo.StoreCid(streamCid)
+		stateRepo.UpdateTip(testCtx, streamTip)
+		stateRepo.StoreCid(testCtx, streamCid)
 
 		validator := NewValidationService(stateRepo, readyPublisher, statusPublisher, metricService)
-		if err := validator.Validate(context.Background(), newEncodedRequest); err != nil {
+		if err := validator.Validate(testCtx, newEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
@@ -60,6 +61,7 @@ func TestPublishNewTip(t *testing.T) {
 
 func TestPublishOldTip(t *testing.T) {
 	_, _, streamTip, streamCid, _ := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	testCtx := context.Background()
 
 	t.Run("do not publish request if tip is older", func(t *testing.T) {
 		_, oldEncodedRequest, _, _, newStatusMessage := generateTestData(uuid.New(), "streamId", "newCid", "origin", -time.Millisecond)
@@ -68,11 +70,11 @@ func TestPublishOldTip(t *testing.T) {
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		stateRepo.UpdateTip(streamTip)
-		stateRepo.StoreCid(streamCid)
+		stateRepo.UpdateTip(testCtx, streamTip)
+		stateRepo.StoreCid(testCtx, streamCid)
 
 		validator := NewValidationService(stateRepo, nil, statusPublisher, metricService)
-		if err := validator.Validate(context.Background(), oldEncodedRequest); err != nil {
+		if err := validator.Validate(testCtx, oldEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
@@ -83,17 +85,18 @@ func TestPublishOldTip(t *testing.T) {
 
 func TestReprocessTips(t *testing.T) {
 	anchorRequest, encodedRequest, streamTip, streamCid, _ := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	testCtx := context.Background()
 
 	t.Run("publish reprocessed request if tip and cid exist", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		stateRepo.UpdateTip(streamTip)
-		stateRepo.StoreCid(streamCid)
+		stateRepo.UpdateTip(testCtx, streamTip)
+		stateRepo.StoreCid(testCtx, streamCid)
 
 		validatorService := NewValidationService(stateRepo, readyPublisher, nil, metricService)
-		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
+		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
@@ -106,10 +109,10 @@ func TestReprocessTips(t *testing.T) {
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		stateRepo.UpdateTip(streamTip)
+		stateRepo.UpdateTip(testCtx, streamTip)
 
 		validatorService := NewValidationService(stateRepo, readyPublisher, nil, metricService)
-		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
+		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
@@ -120,16 +123,17 @@ func TestReprocessTips(t *testing.T) {
 
 func TestCidExists(t *testing.T) {
 	_, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	testCtx := context.Background()
 
 	t.Run("do not publish request if tip does not exist but cid does", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		stateRepo.StoreCid(streamCid)
+		stateRepo.StoreCid(testCtx, streamCid)
 
 		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
-		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
+		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
@@ -142,10 +146,10 @@ func TestCidExists(t *testing.T) {
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		stateRepo.StoreCid(streamCid)
+		stateRepo.StoreCid(testCtx, streamCid)
 
 		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
-		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
+		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
@@ -160,11 +164,11 @@ func TestCidExists(t *testing.T) {
 		statusPublisher := &MockPublisher{messages: make(chan any, 2)}
 		metricService := &MockMetricService{}
 
-		stateRepo.UpdateTip(streamTip)
-		stateRepo.StoreCid(streamCid)
+		stateRepo.UpdateTip(testCtx, streamTip)
+		stateRepo.StoreCid(testCtx, streamCid)
 
 		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
-		if err := validatorService.Validate(context.Background(), newEncodedRequest); err != nil {
+		if err := validatorService.Validate(testCtx, newEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessages := waitForMesssages(statusPublisher.messages, 2)

@@ -24,7 +24,7 @@ func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepo
 
 func (rp RequestPoller) Run(ctx context.Context) {
 	// Start from the last checkpoint
-	prevCheckpoint, err := rp.stateDb.GetCheckpoint(models.CheckpointType_RequestPoll)
+	prevCheckpoint, err := rp.stateDb.GetCheckpoint(ctx, models.CheckpointType_RequestPoll)
 	if err != nil {
 		log.Fatalf("requestpoll: error querying checkpoint: %v", err)
 	}
@@ -59,7 +59,7 @@ func (rp RequestPoller) Run(ctx context.Context) {
 				// It's possible the checkpoint was updated even if a particular request in the batch failed to be queued
 				if nextCheckpoint := rp.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(since) {
 					log.Printf("requestpoll: old=%s, new=%s", since, nextCheckpoint)
-					if _, err = rp.stateDb.UpdateCheckpoint(models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
+					if _, err = rp.stateDb.UpdateCheckpoint(ctx, models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
 						log.Printf("requestpoll: error updating checkpoint %s: %v", nextCheckpoint, err)
 					} else {
 						// Only update checkpoint in-memory once it's been written to DB. This means that it's possible that

@@ -11,10 +11,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-func AwsConfigWithOverride(customEndpoint string) (aws.Config, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
+func AwsConfigWithOverride(ctx context.Context, customEndpoint string) (aws.Config, error) {
 	endpointResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 		return aws.Endpoint{
 			PartitionID:   "aws",
@@ -22,18 +19,23 @@ func AwsConfigWithOverride(customEndpoint string) (aws.Config, error) {
 			SigningRegion: os.Getenv("AWS_REGION"),
 		}, nil
 	})
-	return config.LoadDefaultConfig(ctx, config.WithEndpointResolverWithOptions(endpointResolver))
+
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	return config.LoadDefaultConfig(httpCtx, config.WithEndpointResolverWithOptions(endpointResolver))
 }
 
-func AwsConfig() (aws.Config, error) {
+func AwsConfig(ctx context.Context) (aws.Config, error) {
 	awsEndpoint := os.Getenv("AWS_ENDPOINT")
 	if len(awsEndpoint) > 0 {
 		log.Printf("config: using custom global aws endpoint: %s", awsEndpoint)
-		return AwsConfigWithOverride(awsEndpoint)
+		return AwsConfigWithOverride(ctx, awsEndpoint)
 	}
-	// Load the default configuration
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
 
-	return config.LoadDefaultConfig(ctx, config.WithRegion(os.Getenv("AWS_REGION")))
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	// Load the default configuration
+	return config.LoadDefaultConfig(httpCtx, config.WithRegion(os.Getenv("AWS_REGION")))
 }

@@ -22,7 +22,7 @@ type BatchingService struct {
 	metricService  models.MetricService
 }
 
-func NewBatchingService(batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
+func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -37,7 +37,13 @@ func NewBatchingService(batchPublisher models.QueuePublisher, metricService mode
 	}
 	batchingService := BatchingService{batchPublisher: batchPublisher, metricService: metricService}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
-	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](beOpts, batchingService.batch)
+	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](
+		beOpts,
+		func(anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
+			// Close over the passed context
+			return batchingService.batch(ctx, anchorReqs)
+		},
+	)
 	return &batchingService
 }
 
@@ -54,7 +60,7 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 	}
 }
 
-func (b BatchingService) batch(anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
+func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
 	anchorReqBatch := models.AnchorBatchMessage{
 		Id:  uuid.New(),
 		Ids: make([]uuid.UUID, len(anchorReqs)),
@@ -64,7 +70,7 @@ func (b BatchingService) batch(anchorReqs []*models.AnchorRequestMessage) ([]res
 		anchorReqBatch.Ids[idx] = anchorReq.Id
 		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
 	}
-	if _, err := b.batchPublisher.SendMessage(context.Background(), anchorReqBatch); err != nil {
+	if _, err := b.batchPublisher.SendMessage(ctx, anchorReqBatch); err != nil {
 		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}

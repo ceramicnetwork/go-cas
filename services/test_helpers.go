@@ -58,16 +58,16 @@ type MockStateRepository struct {
 	cidStore   map[string]bool
 }
 
-func (m *MockStateRepository) GetCheckpoint(CheckpointType models.CheckpointType) (time.Time, error) {
+func (m *MockStateRepository) GetCheckpoint(_ context.Context, CheckpointType models.CheckpointType) (time.Time, error) {
 	return m.checkpoint, nil
 }
 
-func (m *MockStateRepository) UpdateCheckpoint(checkpointType models.CheckpointType, time time.Time) (bool, error) {
+func (m *MockStateRepository) UpdateCheckpoint(_ context.Context, checkpointType models.CheckpointType, time time.Time) (bool, error) {
 	m.checkpoint = time
 	return true, nil
 }
 
-func (m *MockStateRepository) StoreCid(streamCid *models.StreamCid) (bool, error) {
+func (m *MockStateRepository) StoreCid(_ context.Context, streamCid *models.StreamCid) (bool, error) {
 	if m.cidStore == nil {
 		m.cidStore = make(map[string]bool, 1)
 	}
@@ -80,7 +80,7 @@ func (m *MockStateRepository) StoreCid(streamCid *models.StreamCid) (bool, error
 	return false, nil
 }
 
-func (m *MockStateRepository) UpdateTip(newTip *models.StreamTip) (bool, *models.StreamTip, error) {
+func (m *MockStateRepository) UpdateTip(_ context.Context, newTip *models.StreamTip) (bool, *models.StreamTip, error) {
 	if m.tipStore == nil {
 		m.tipStore = make(map[string]*models.StreamTip, 1)
 	}
@@ -101,7 +101,7 @@ type MockJobRepository struct {
 	failCount int
 }
 
-func (m *MockJobRepository) CreateJob() error {
+func (m *MockJobRepository) CreateJob(_ context.Context) error {
 	if m.jobStore == nil {
 		m.jobStore = make(map[string]bool, 1)
 	}
@@ -139,7 +139,7 @@ type MockBatchPublisher struct {
 	fail     bool
 }
 
-func (m *MockBatchPublisher) SendMessage(ctx context.Context, event any) (string, error) {
+func (m *MockBatchPublisher) SendMessage(_ context.Context, event any) (string, error) {
 	if m.fail {
 		return "", errors.New("test error")
 	}
@@ -164,7 +164,7 @@ type MockQueueMonitor struct {
 	failCount   int
 }
 
-func (m *MockQueueMonitor) GetQueueUtilization(ctx context.Context) (int, int, error) {
+func (m *MockQueueMonitor) GetQueueUtilization(_ context.Context) (int, int, error) {
 	if m.failCount > 0 {
 		m.failCount--
 		return 0, 0, fmt.Errorf("failed to get utilization")

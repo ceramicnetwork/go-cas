@@ -35,7 +35,7 @@ type QueueRedrivePolicy struct {
 	MaxReceiveCount     int    `json:"maxReceiveCount"`
 }
 
-func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *QueueRedrivePolicy) (string, error) {
+func CreateQueue(ctx context.Context, queueType QueueType, sqsClient *sqs.Client, redrivePolicy *QueueRedrivePolicy) (string, error) {
 	visibilityTimeout := QueueDefaultVisibilityTimeout
 	if configVisibilityTimeout, found := os.LookupEnv("QUEUE_VISIBILITY_TIMEOUT"); found {
 		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
@@ -53,10 +53,11 @@ func CreateQueue(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *Queu
 		marshaledRedrivePolicy, _ := json.Marshal(redrivePolicy)
 		createQueueIn.Attributes[string(types.QueueAttributeNameRedrivePolicy)] = string(marshaledRedrivePolicy)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
 
-	if createQueueOut, err := sqsClient.CreateQueue(ctx, &createQueueIn); err != nil {
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	if createQueueOut, err := sqsClient.CreateQueue(httpCtx, &createQueueIn); err != nil {
 		return "", err
 	} else {
 		return *createQueueOut.QueueUrl, nil
@@ -80,24 +81,22 @@ func GetQueueUtilization(ctx context.Context, queueUrl string, sqsClient *sqs.Cl
 	return 0, 0, nil
 }
 
-func GetQueueUrl(queueType QueueType, sqsClient *sqs.Client) (string, error) {
+func GetQueueUrl(ctx context.Context, queueType QueueType, sqsClient *sqs.Client) (string, error) {
 	getQueueUrlIn := sqs.GetQueueUrlInput{
 		QueueName: aws.String(queueName(queueType)),
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
 
-	if getQueueUrlOut, err := sqsClient.GetQueueUrl(ctx, &getQueueUrlIn); err != nil {
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	if getQueueUrlOut, err := sqsClient.GetQueueUrl(httpCtx, &getQueueUrlIn); err != nil {
 		return "", nil
 	} else {
 		return *getQueueUrlOut.QueueUrl, nil
 	}
 }
 
-func GetQueueArn(queueUrl string, sqsClient *sqs.Client) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
+func GetQueueArn(ctx context.Context, queueUrl string, sqsClient *sqs.Client) (string, error) {
 	if queueAttr, err := getQueueAttributes(ctx, queueUrl, sqsClient); err != nil {
 		return "", err
 	} else {
@@ -110,10 +109,11 @@ func getQueueAttributes(ctx context.Context, queueUrl string, sqsClient *sqs.Cli
 		QueueUrl:       aws.String(queueUrl),
 		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
 	}
-	qCtx, qCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
-	defer qCancel()
 
-	if getQueueAttrOut, err := sqsClient.GetQueueAttributes(qCtx, &getQueueAttrIn); err != nil {
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	if getQueueAttrOut, err := sqsClient.GetQueueAttributes(httpCtx, &getQueueAttrIn); err != nil {
 		return nil, nil
 	} else {
 		return getQueueAttrOut.Attributes, nil

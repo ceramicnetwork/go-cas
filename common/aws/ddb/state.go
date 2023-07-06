@@ -23,7 +23,7 @@ type StateDatabase struct {
 	tipTable        string
 }
 
-func NewStateDb(client *dynamodb.Client) *StateDatabase {
+func NewStateDb(ctx context.Context, client *dynamodb.Client) *StateDatabase {
 	env := os.Getenv("ENV")
 
 	tablePfx := "cas-anchor-" + env + "-"
@@ -37,17 +37,17 @@ func NewStateDb(client *dynamodb.Client) *StateDatabase {
 		streamTable,
 		tipTable,
 	}
-	if err := sdb.createCheckpointTable(); err != nil {
+	if err := sdb.createCheckpointTable(ctx); err != nil {
 		log.Fatalf("state: checkpoint table creation failed: %v", err)
-	} else if err = sdb.createStreamTable(); err != nil {
+	} else if err = sdb.createStreamTable(ctx); err != nil {
 		log.Fatalf("state: stream table creation failed: %v", err)
-	} else if err = sdb.createTipTable(); err != nil {
+	} else if err = sdb.createTipTable(ctx); err != nil {
 		log.Fatalf("state: tip table creation failed: %v", err)
 	}
 	return &sdb
 }
 
-func (sdb *StateDatabase) createCheckpointTable() error {
+func (sdb *StateDatabase) createCheckpointTable(ctx context.Context) error {
 	createStreamTableInput := dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -67,10 +67,10 @@ func (sdb *StateDatabase) createCheckpointTable() error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return createTable(sdb.client, &createStreamTableInput)
+	return createTable(ctx, sdb.client, &createStreamTableInput)
 }
 
-func (sdb *StateDatabase) createStreamTable() error {
+func (sdb *StateDatabase) createStreamTable(ctx context.Context) error {
 	createTableInput := dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -98,10 +98,10 @@ func (sdb *StateDatabase) createStreamTable() error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return createTable(sdb.client, &createTableInput)
+	return createTable(ctx, sdb.client, &createTableInput)
 }
 
-func (sdb *StateDatabase) createTipTable() error {
+func (sdb *StateDatabase) createTipTable(ctx context.Context) error {
 	createTableInput := dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -129,20 +129,21 @@ func (sdb *StateDatabase) createTipTable() error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return createTable(sdb.client, &createTableInput)
+	return createTable(ctx, sdb.client, &createTableInput)
 }
 
-func (sdb *StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Time, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
+func (sdb *StateDatabase) GetCheckpoint(ctx context.Context, ckptType models.CheckpointType) (time.Time, error) {
 	getItemIn := dynamodb.GetItemInput{
 		Key: map[string]types.AttributeValue{
 			"name": &types.AttributeValueMemberS{Value: string(ckptType)},
 		},
 		TableName: aws.String(sdb.checkpointTable),
 	}
-	getItemOut, err := sdb.client.GetItem(ctx, &getItemIn)
+
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	getItemOut, err := sdb.client.GetItem(httpCtx, &getItemIn)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -157,10 +158,7 @@ func (sdb *StateDatabase) GetCheckpoint(ckptType models.CheckpointType) (time.Ti
 	return time.Time{}, nil
 }
 
-func (sdb *StateDatabase) UpdateCheckpoint(checkpointType models.CheckpointType, checkpoint time.Time) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
-
+func (sdb *StateDatabase) UpdateCheckpoint(ctx context.Context, checkpointType models.CheckpointType, checkpoint time.Time) (bool, error) {
 	checkpointStr := checkpoint.Format(models.DbDateFormat)
 	updateItemIn := dynamodb.UpdateItemInput{
 		Key: map[string]types.AttributeValue{
@@ -176,7 +174,11 @@ func (sdb *StateDatabase) UpdateCheckpoint(checkpointType models.CheckpointType,
 		},
 		UpdateExpression: aws.String("set #value = :value"),
 	}
-	if _, err := sdb.client.UpdateItem(ctx, &updateItemIn); err != nil {
+
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	if _, err := sdb.client.UpdateItem(httpCtx, &updateItemIn); err != nil {
 		// To get a specific API error
 		var condUpdErr *types.ConditionalCheckFailedException
 		if errors.As(err, &condUpdErr) {
@@ -190,13 +192,10 @@ func (sdb *StateDatabase) UpdateCheckpoint(checkpointType models.CheckpointType,
 	return true, nil
 }
 
-func (sdb *StateDatabase) StoreCid(streamCid *models.StreamCid) (bool, error) {
+func (sdb *StateDatabase) StoreCid(ctx context.Context, streamCid *models.StreamCid) (bool, error) {
 	if attributeValues, err := attributevalue.MarshalMapWithOptions(streamCid); err != nil {
 		return false, err
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-		defer cancel()
-
 		// Deduplicate CIDs
 		putItemIn := dynamodb.PutItemInput{
 			TableName:                aws.String(sdb.streamTable),
@@ -204,7 +203,11 @@ func (sdb *StateDatabase) StoreCid(streamCid *models.StreamCid) (bool, error) {
 			ExpressionAttributeNames: map[string]string{"#id": "id"},
 			Item:                     attributeValues,
 		}
-		if _, err = sdb.client.PutItem(ctx, &putItemIn); err != nil {
+
+		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		defer httpCancel()
+
+		if _, err = sdb.client.PutItem(httpCtx, &putItemIn); err != nil {
 			// To get a specific API error
 			var condUpdErr *types.ConditionalCheckFailedException
 			if errors.As(err, &condUpdErr) {
@@ -218,7 +221,7 @@ func (sdb *StateDatabase) StoreCid(streamCid *models.StreamCid) (bool, error) {
 	}
 }
 
-func (sdb *StateDatabase) UpdateTip(newTip *models.StreamTip) (bool, *models.StreamTip, error) {
+func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTip) (bool, *models.StreamTip, error) {
 	if attributeValues, err := attributevalue.MarshalMapWithOptions(newTip, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
 			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
@@ -226,9 +229,6 @@ func (sdb *StateDatabase) UpdateTip(newTip *models.StreamTip) (bool, *models.Str
 	}); err != nil {
 		return false, nil, err
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-		defer cancel()
-
 		// Deduplicate stream tips
 		putItemIn := dynamodb.PutItemInput{
 			TableName:                aws.String(sdb.tipTable),
@@ -240,7 +240,11 @@ func (sdb *StateDatabase) UpdateTip(newTip *models.StreamTip) (bool, *models.Str
 			Item:         attributeValues,
 			ReturnValues: types.ReturnValueAllOld,
 		}
-		if putItemOut, err := sdb.client.PutItem(ctx, &putItemIn); err != nil {
+
+		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		defer httpCancel()
+
+		if putItemOut, err := sdb.client.PutItem(httpCtx, &putItemIn); err != nil {
 			// To get a specific API error
 			var condUpdErr *types.ConditionalCheckFailedException
 			if errors.As(err, &condUpdErr) {

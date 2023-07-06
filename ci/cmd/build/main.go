@@ -73,7 +73,7 @@ func pushImage(ctx context.Context, client *dagger.Client, container *dagger.Con
 }
 
 func getEcrToken(ctx context.Context) string {
-	awsCfg, err := config.AwsConfig()
+	awsCfg, err := config.AwsConfig(ctx)
 	if err != nil {
 		log.Fatalf("build: error creating aws cfg: %v", err)
 	}
