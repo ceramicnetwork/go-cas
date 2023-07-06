@@ -1,28 +1,46 @@
 package models
 
-const DefaultJobState = "queued"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
+
 const DeployComponent = "casv5"
 const WorkerVersion = "5"
 
-const (
-	JobType_Deploy = "deploy"
-	JobType_Anchor = "anchor"
-)
+type JobType string
 
 const (
-	JobParam_Id        = "id"
-	JobParam_Ts        = "ts"
-	JobParam_Stage     = "stage"
-	JobParam_Type      = "type"
-	JobParam_Params    = "params"
-	JobParam_Version   = "version"
-	JobParam_Overrides = "overrides"
+	JobType_Deploy JobType = "deploy"
+	JobType_Anchor JobType = "anchor"
 )
 
-// These need to match the Anchor Worker environment variable names
+type JobStage string
+
 const (
-	AnchorOverrides_UseQueueBatches = "USE_QUEUE_BATCHES"
-	AnchorOverrides_ContractAddress = "ETH_CONTRACT_ADDRESS"
-	AnchorOverrides_BatchQueueUrl   = "SQS_BATCH_QUEUE_URL"
-	AnchorOverrides_FailureQueueUrl = "SQS_FAILURE_QUEUE_URL"
+	JobStage_Queued    JobStage = "queued"
+	JobStage_Waiting   JobStage = "waiting"
+	JobStage_Failed    JobStage = "failed"
+	JobStage_Completed JobStage = "completed"
 )
+
+const JobParam_Version = "version"
+
+type JobState struct {
+	Stage  JobStage               `dynamodbav:"stage"`
+	Ts     time.Time              `dynamodbav:"ts"`
+	Id     string                 `dynamodbav:"id"`
+	Type   JobType                `dynamodbav:"type"`
+	Params map[string]interface{} `dynamodbav:"params"`
+}
+
+func NewJob(jobType JobType, params map[string]interface{}) JobState {
+	return JobState{
+		Stage:  JobStage_Queued,
+		Ts:     time.Time{},
+		Id:     uuid.New().String(),
+		Type:   jobType,
+		Params: params,
+	}
+}

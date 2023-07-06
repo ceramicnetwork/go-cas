@@ -260,8 +260,8 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 				oldTip,
 				func(options *attributevalue.DecoderOptions) {
 					options.DecodeTime = attributevalue.DecodeTimeAttributes{
-						S: sdb.tsDecode,
-						N: sdb.tsDecode,
+						S: tsDecode,
+						N: tsDecode,
 					}
 				}); err != nil {
 				log.Printf("updateTip: error unmarshaling old tip: %v", err)
@@ -276,12 +276,4 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 		// We wrote a new tip but did not have an old tip to return
 		return true, nil, nil
 	}
-}
-
-func (sdb *StateDatabase) tsDecode(ts string) (time.Time, error) {
-	msec, err := strconv.ParseInt(ts, 10, 64)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.UnixMilli(msec), nil
 }

@@ -97,20 +97,37 @@ func (m *MockStateRepository) UpdateTip(_ context.Context, newTip *models.Stream
 }
 
 type MockJobRepository struct {
-	jobStore  map[string]bool
+	jobStore  map[string]*models.JobState
 	failCount int
 }
 
-func (m *MockJobRepository) CreateJob(_ context.Context) error {
+func (m *MockJobRepository) CreateJob(_ context.Context) (string, error) {
 	if m.jobStore == nil {
-		m.jobStore = make(map[string]bool, 1)
+		m.jobStore = make(map[string]*models.JobState, 1)
 	}
 	if m.failCount > 0 {
 		m.failCount--
-		return fmt.Errorf("failed to create job")
+		return "", fmt.Errorf("failed to create job")
 	}
-	m.jobStore[uuid.New().String()] = true
-	return nil
+	newJob := models.NewJob(models.JobType_Anchor, nil)
+	m.jobStore[newJob.Id] = &newJob
+	return newJob.Id, nil
+}
+
+func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*models.JobState, error) {
+	if _, found := m.jobStore[id]; found {
+		return &models.JobState{}, nil
+	}
+	return nil, fmt.Errorf("job %s not found", id)
+}
+
+func (m *MockJobRepository) finishJobs(count int) {
+	for _, js := range m.jobStore {
+		if count > 0 {
+			js.Stage = models.JobStage_Completed
+			count--
+		}
+	}
 }
 
 type MockPublisher struct {
@@ -159,8 +176,6 @@ func waitForMesssages(messageChannel chan any, n int) []any {
 
 type MockQueueMonitor struct {
 	unprocessed int
-	inFlight    int
-	jobDb       *MockJobRepository
 	failCount   int
 }
 
@@ -169,8 +184,7 @@ func (m *MockQueueMonitor) GetQueueUtilization(_ context.Context) (int, int, err
 		m.failCount--
 		return 0, 0, fmt.Errorf("failed to get utilization")
 	}
-	// Increment in flight by as many jobs as were created in the job DB and decrement unprocessed by the same number
-	return m.unprocessed - len(m.jobDb.jobStore), m.inFlight + len(m.jobDb.jobStore), nil
+	return m.unprocessed, 0, nil
 }
 
 type MockMetricService struct {

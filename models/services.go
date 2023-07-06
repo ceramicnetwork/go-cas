@@ -20,7 +20,8 @@ type StateRepository interface {
 }
 
 type JobRepository interface {
-	CreateJob(ctx context.Context) error
+	CreateJob(ctx context.Context) (string, error)
+	QueryJob(ctx context.Context, id string) (*JobState, error)
 }
 
 type QueuePublisher interface {
