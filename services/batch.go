@@ -19,9 +19,10 @@ import (
 type BatchingService struct {
 	batchPublisher models.QueuePublisher
 	batcher        *batch.Executor[*models.AnchorRequestMessage, *uuid.UUID]
+	metricService  models.MetricService
 }
 
-func NewBatchingService(batchPublisher models.QueuePublisher) *BatchingService {
+func NewBatchingService(batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -34,7 +35,7 @@ func NewBatchingService(batchPublisher models.QueuePublisher) *BatchingService {
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-	batchingService := BatchingService{batchPublisher: batchPublisher}
+	batchingService := BatchingService{batchPublisher: batchPublisher, metricService: metricService}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
 	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](beOpts, batchingService.batch)
 	return &batchingService
@@ -67,6 +68,7 @@ func (b BatchingService) batch(anchorReqs []*models.AnchorRequestMessage) ([]res
 		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}
+	b.metricService.Count(context.Background(), models.MetricName_CreatedBatch, 1)
 	log.Printf("batch: generated batch: %v", anchorReqBatch)
 	return batchResults, nil
 }

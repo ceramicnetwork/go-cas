@@ -18,13 +18,15 @@ func TestPublishNewTip(t *testing.T) {
 	t.Run("publish request if tip does not already exist", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
-		validator := NewValidationService(stateRepo, readyPublisher, nil)
+		validator := NewValidationService(stateRepo, readyPublisher, nil, metricService)
 		if err := validator.Validate(context.Background(), encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
 		testAnchorRequest(t, receivedMessage, anchorRequest)
+		Assert(t, 0, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("publish request and replace old tip", func(t *testing.T) {
@@ -33,11 +35,12 @@ func TestPublishNewTip(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
 		stateRepo.UpdateTip(streamTip)
 		stateRepo.StoreCid(streamCid)
 
-		validator := NewValidationService(stateRepo, readyPublisher, statusPublisher)
+		validator := NewValidationService(stateRepo, readyPublisher, statusPublisher, metricService)
 		if err := validator.Validate(context.Background(), newEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -51,6 +54,7 @@ func TestPublishNewTip(t *testing.T) {
 		}
 		receivedMessage = waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, statusMessage)
+		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 }
 
@@ -62,16 +66,18 @@ func TestPublishOldTip(t *testing.T) {
 
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
 		stateRepo.UpdateTip(streamTip)
 		stateRepo.StoreCid(streamCid)
 
-		validator := NewValidationService(stateRepo, nil, statusPublisher)
+		validator := NewValidationService(stateRepo, nil, statusPublisher, metricService)
 		if err := validator.Validate(context.Background(), oldEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, newStatusMessage)
+		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 }
 
@@ -81,30 +87,34 @@ func TestReprocessTips(t *testing.T) {
 	t.Run("publish reprocessed request if tip and cid exist", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
 		stateRepo.UpdateTip(streamTip)
 		stateRepo.StoreCid(streamCid)
 
-		validatorService := NewValidationService(stateRepo, readyPublisher, nil)
+		validatorService := NewValidationService(stateRepo, readyPublisher, nil, metricService)
 		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
 		testAnchorRequest(t, receivedMessage, anchorRequest)
+		Assert(t, 0, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("publish reprocessed request if tip exists but cid does not", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
 		stateRepo.UpdateTip(streamTip)
 
-		validatorService := NewValidationService(stateRepo, readyPublisher, nil)
+		validatorService := NewValidationService(stateRepo, readyPublisher, nil, metricService)
 		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
 		testAnchorRequest(t, receivedMessage, anchorRequest)
+		Assert(t, 0, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 }
 
@@ -114,29 +124,33 @@ func TestCidExists(t *testing.T) {
 	t.Run("do not publish request if tip does not exist but cid does", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
 		stateRepo.StoreCid(streamCid)
 
-		validatorService := NewValidationService(stateRepo, nil, statusPublisher)
+		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
 		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, statusMessage)
+		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("replace tip if cid exists", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
 
 		stateRepo.StoreCid(streamCid)
 
-		validatorService := NewValidationService(stateRepo, nil, statusPublisher)
+		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
 		if err := validatorService.Validate(context.Background(), encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, statusMessage)
+		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("replace newer and older tips if cid exists", func(t *testing.T) {
@@ -144,17 +158,19 @@ func TestCidExists(t *testing.T) {
 
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 2)}
+		metricService := &MockMetricService{}
 
 		stateRepo.UpdateTip(streamTip)
 		stateRepo.StoreCid(streamCid)
 
-		validatorService := NewValidationService(stateRepo, nil, statusPublisher)
+		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
 		if err := validatorService.Validate(context.Background(), newEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
 		receivedMessages := waitForMesssages(statusPublisher.messages, 2)
 		testStatusMessage(t, receivedMessages[0], statusMessage)
 		testStatusMessage(t, receivedMessages[1], newStatusMessage)
+		Assert(t, 2, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
 	})
 }
 

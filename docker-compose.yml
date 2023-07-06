@@ -20,6 +20,7 @@ services:
       - PG_DB=anchor_db
       - ANCHOR_BATCH_SIZE=4
       - ANCHOR_BATCH_LINGER=5m
+      - COLLECTOR_HOST=collector
     depends_on:
       localstack:
         condition: service_healthy
@@ -66,8 +67,7 @@ services:
       - DB_PORT=5432
       - DB_USERNAME=root
       - DB_PASSWORD=root
-      - SQS_URL=http://localstack:4566/000000000000/cas-anchor-dev-batch
-      - SQS_QUEUE_USE_POLLING=true
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-
       - AWS_ACCOUNT_ID=000000000000
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=.
@@ -90,7 +90,9 @@ services:
       replicas: 1
 
   cas_api:
-    image: ceramicnetwork/ceramic-anchor-service:release-candidate
+    build:
+      context: ../ceramic-anchor-service
+      target: base
     container_name: cas_api
     environment:
       - NODE_ENV=dev
@@ -119,6 +121,11 @@ services:
       - DB_USERNAME=root
       - DB_PASSWORD=root
       - VALIDATE_RECORDS=false
+      - AWS_ACCOUNT_ID=000000000000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=.
+      - AWS_SECRET_ACCESS_KEY=.
+      - SQS_QUEUE_URL=http://localstack:4566/000000000000/cas-anchor-dev-
     depends_on:
       cas_ipfs:
         condition: service_healthy
@@ -244,6 +251,21 @@ services:
       timeout: 10s
     networks:
       - internal
+
+  otel-collector:
+    container_name: collector
+    image: otel/opentelemetry-collector-contrib
+    command: [--config=/etc/otel-collector-config.yaml]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - 1888:1888 # pprof extension
+      - 8888:8888 # Prometheus metrics exposed by the collector
+      - 8889:8889 # Prometheus exporter metrics
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+      - 55679:55679 # zpages extension
 
 networks:
   internal:

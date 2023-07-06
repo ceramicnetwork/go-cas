@@ -1,0 +1,30 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+      http:
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+
+processors:
+  filter/prometheus:
+    metrics:
+      exclude:
+        match_type: regexp
+        metric_names:
+          - ^.*tsdb$
+
+extensions:
+  health_check:
+  pprof:
+  zpages:
+
+service:
+  extensions: [health_check, pprof, zpages]
+  pipelines:
+    metrics/prometheus:
+      receivers: [otlp]
+      processors: [filter/prometheus]
+      exporters: [prometheus]
