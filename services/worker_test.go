@@ -60,7 +60,7 @@ func TestRun(t *testing.T) {
 			newJobs:    3,
 		},
 		"resume creating jobs if existing job finishes": {
-			monitor:      &MockQueueMonitor{3, 1},
+			monitor:      &MockQueueMonitor{3, 0},
 			jobDb:        &MockJobRepository{failCount: 0},
 			maxWorkers:   2,
 			inflightJobs: 2,
@@ -92,9 +92,11 @@ func TestRun(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
 			workerService.Run(ctx)
 			cancel()
-			numJobsRemaining := test.inflightJobs + test.newJobs - test.finishedJobs
-			if len(test.jobDb.jobStore) != numJobsRemaining {
-				t.Errorf("incorrect number %d of remaining jobs, expected %d", len(test.jobDb.jobStore), numJobsRemaining)
+			// Since jobs are not deleted from the database, the total number of jobs will be the number of jobs created
+			// over both calls to `WorkerService.Run`.
+			totalNumJobs := test.inflightJobs + test.newJobs
+			if len(test.jobDb.jobStore) != totalNumJobs {
+				t.Errorf("incorrect number %d of remaining jobs, expected %d", len(test.jobDb.jobStore), totalNumJobs)
 			}
 		})
 	}

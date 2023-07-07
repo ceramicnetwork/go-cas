@@ -71,6 +71,7 @@ func (w WorkerService) launch(ctx context.Context) (int, error) {
 				w.anchorJobs[jobId] = nil
 			}
 		}
+		log.Printf("worker: numJobsRequired=%d, anchorJobs=%v", numJobsRequired, w.anchorJobs)
 		return numJobsCreated, err
 	}
 }

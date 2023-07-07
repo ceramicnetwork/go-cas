@@ -115,8 +115,8 @@ func (m *MockJobRepository) CreateJob(_ context.Context) (string, error) {
 }
 
 func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*models.JobState, error) {
-	if _, found := m.jobStore[id]; found {
-		return &models.JobState{}, nil
+	if jobState, found := m.jobStore[id]; found {
+		return jobState, nil
 	}
 	return nil, fmt.Errorf("job %s not found", id)
 }
