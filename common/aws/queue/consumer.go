@@ -1,12 +1,17 @@
 package queue
 
-import "github.com/abevier/go-sqs/gosqs"
+import (
+	"log"
+
+	"github.com/abevier/go-sqs/gosqs"
+)
 
 const consumerMaxWorkers = 100
 const consumerMaxReceiveMessageRequests = 12
 
 type Consumer struct {
-	consumer *gosqs.SQSConsumer
+	queueType QueueType
+	consumer  *gosqs.SQSConsumer
 }
 
 func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc) *Consumer {
@@ -15,9 +20,17 @@ func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc) *Cons
 		MaxWorkers:                        consumerMaxWorkers,
 		MaxInflightReceiveMessageRequests: consumerMaxReceiveMessageRequests,
 	}
-	return &Consumer{gosqs.NewConsumer(qOpts, publisher.publisher, callback)}
+	return &Consumer{publisher.queueType, gosqs.NewConsumer(qOpts, publisher.publisher, callback)}
 }
 
 func (c Consumer) Start() {
+	log.Printf("%s: consumer starting", c.queueType)
 	c.consumer.Start()
+	log.Printf("%s: consumer started", c.queueType)
+}
+
+func (c Consumer) Shutdown() {
+	log.Printf("%s: consumer stopping", c.queueType)
+	c.consumer.Shutdown()
+	log.Printf("%s: consumer stopped", c.queueType)
 }

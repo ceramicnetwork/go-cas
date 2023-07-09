@@ -58,7 +58,7 @@ func createJob(ctx context.Context) error {
 		}
 	}); err != nil {
 		return err
-	} else if awsCfg, err := config.AwsConfig(); err != nil {
+	} else if awsCfg, err := config.AwsConfig(ctx); err != nil {
 		return err
 	} else {
 		envTag := os.Getenv(Env_EnvTag)

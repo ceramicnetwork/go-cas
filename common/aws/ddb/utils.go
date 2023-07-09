@@ -15,16 +15,16 @@ import (
 const tableCreationRetries = 3
 const tableCreationWait = 3 * time.Second
 
-func createTable(client *dynamodb.Client, createTableIn *dynamodb.CreateTableInput) error {
-	if exists, err := tableExists(client, *createTableIn.TableName); !exists {
-		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-		defer cancel()
+func createTable(ctx context.Context, client *dynamodb.Client, createTableIn *dynamodb.CreateTableInput) error {
+	if exists, err := tableExists(ctx, client, *createTableIn.TableName); !exists {
+		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		defer httpCancel()
 
-		if _, err = client.CreateTable(ctx, createTableIn); err != nil {
+		if _, err = client.CreateTable(httpCtx, createTableIn); err != nil {
 			return err
 		}
 		for i := 0; i < tableCreationRetries; i++ {
-			if exists, err = tableExists(client, *createTableIn.TableName); exists {
+			if exists, err = tableExists(ctx, client, *createTableIn.TableName); exists {
 				return nil
 			}
 			time.Sleep(tableCreationWait)
@@ -34,11 +34,11 @@ func createTable(client *dynamodb.Client, createTableIn *dynamodb.CreateTableInp
 	return nil
 }
 
-func tableExists(client *dynamodb.Client, table string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-	defer cancel()
+func tableExists(ctx context.Context, client *dynamodb.Client, table string) (bool, error) {
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
 
-	if output, err := client.DescribeTable(ctx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {
+	if output, err := client.DescribeTable(httpCtx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {
 		log.Printf("dynamodb: table does not exist: %v", table)
 		return false, err
 	} else {

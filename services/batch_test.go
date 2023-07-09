@@ -56,11 +56,12 @@ func TestBatch(t *testing.T) {
 		},
 	}
 
+	testCtx := context.Background()
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			metricService := &MockMetricService{}
-			batchingServices := NewBatchingService(test.publisher, metricService)
-			ctx, cancel := context.WithCancel(context.Background())
+			batchingServices := NewBatchingService(testCtx, test.publisher, metricService)
+			ctx, cancel := context.WithCancel(testCtx)
 
 			var wg sync.WaitGroup
 			for _, er := range test.encodedRequests {

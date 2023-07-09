@@ -21,16 +21,16 @@ type JobDatabase struct {
 	jobTable  string
 }
 
-func NewJobDb(ddbClient *dynamodb.Client) *JobDatabase {
+func NewJobDb(ctx context.Context, ddbClient *dynamodb.Client) *JobDatabase {
 	jobTable := "ceramic-" + os.Getenv("ENV") + "-ops"
 	jdb := JobDatabase{ddbClient, jobTable}
-	if err := jdb.createJobTable(); err != nil {
+	if err := jdb.createJobTable(ctx); err != nil {
 		log.Fatalf("job: table creation failed: %v", err)
 	}
 	return &jdb
 }
 
-func (jdb *JobDatabase) createJobTable() error {
+func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 	createJobTableInput := dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
@@ -58,10 +58,10 @@ func (jdb *JobDatabase) createJobTable() error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return createTable(jdb.ddbClient, &createJobTableInput)
+	return createTable(ctx, jdb.ddbClient, &createJobTableInput)
 }
 
-func (jdb *JobDatabase) CreateJob() error {
+func (jdb *JobDatabase) CreateJob(ctx context.Context) error {
 	newJob := map[string]interface{}{
 		models.JobParam_Id:    uuid.New().String(),
 		models.JobParam_Ts:    time.Now(),
@@ -79,10 +79,10 @@ func (jdb *JobDatabase) CreateJob() error {
 	if err != nil {
 		return err
 	} else {
-		ctx, cancel := context.WithTimeout(context.Background(), models.DefaultHttpWaitTime)
-		defer cancel()
+		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		defer httpCancel()
 
-		_, err = jdb.ddbClient.PutItem(ctx, &dynamodb.PutItemInput{
+		_, err = jdb.ddbClient.PutItem(httpCtx, &dynamodb.PutItemInput{
 			TableName: aws.String(jdb.jobTable),
 			Item:      attributeValues,
 		})

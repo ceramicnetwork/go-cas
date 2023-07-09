@@ -10,16 +10,18 @@ import (
 )
 
 type Publisher struct {
+	queueType QueueType
 	QueueUrl  string
 	publisher *gosqs.SQSPublisher
 }
 
-func NewPublisher(queueType QueueType, sqsClient *sqs.Client, redrivePolicy *QueueRedrivePolicy) (*Publisher, error) {
+func NewPublisher(ctx context.Context, queueType QueueType, sqsClient *sqs.Client, redrivePolicy *QueueRedrivePolicy) (*Publisher, error) {
 	// Create the queue if it didn't already exist
-	if queueUrl, err := CreateQueue(queueType, sqsClient, redrivePolicy); err != nil {
+	if queueUrl, err := CreateQueue(ctx, queueType, sqsClient, redrivePolicy); err != nil {
 		return nil, err
 	} else {
 		return &Publisher{
+			queueType,
 			queueUrl,
 			gosqs.NewPublisher(
 				sqsClient,

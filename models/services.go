@@ -8,19 +8,19 @@ import (
 )
 
 type AnchorRepository interface {
-	GetRequests(context.Context, RequestStatus, time.Time, int) ([]*AnchorRequest, error)
-	UpdateStatus(context.Context, uuid.UUID, RequestStatus, []RequestStatus) error
+	GetRequests(ctx context.Context, status RequestStatus, since time.Time, limit int) ([]*AnchorRequest, error)
+	UpdateStatus(ctx context.Context, id uuid.UUID, status RequestStatus, allowedSourceStatuses []RequestStatus) error
 }
 
 type StateRepository interface {
-	GetCheckpoint(CheckpointType) (time.Time, error)
-	UpdateCheckpoint(CheckpointType, time.Time) (bool, error)
-	StoreCid(*StreamCid) (bool, error)
-	UpdateTip(*StreamTip) (bool, *StreamTip, error)
+	GetCheckpoint(ctx context.Context, checkpointType CheckpointType) (time.Time, error)
+	UpdateCheckpoint(ctx context.Context, checkpointType CheckpointType, checkpoint time.Time) (bool, error)
+	StoreCid(ctx context.Context, streamCid *StreamCid) (bool, error)
+	UpdateTip(ctx context.Context, newTip *StreamTip) (bool, *StreamTip, error)
 }
 
 type JobRepository interface {
-	CreateJob() error
+	CreateJob(ctx context.Context) error
 }
 
 type QueuePublisher interface {
@@ -32,7 +32,7 @@ type QueueMonitor interface {
 }
 
 type Notifier interface {
-	SendAlert(string, string) error
+	SendAlert(title, desc string) error
 }
 
 type MetricService interface {

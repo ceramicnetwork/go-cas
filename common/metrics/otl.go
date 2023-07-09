@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -57,12 +58,14 @@ func NewMetricService(ctx context.Context, collectorHost string) (models.MetricS
 	)
 
 	meter := meterProvider.Meter("go-cas")
+	log.Printf("metrics: started")
 
 	return &OtlMetricService{meter: meter, meterProvider: meterProvider}, nil
 }
 
 func (o OtlMetricService) Shutdown(ctx context.Context) {
 	o.meterProvider.Shutdown(ctx)
+	log.Printf("metrics: stopped")
 }
 
 func (o OtlMetricService) Count(ctx context.Context, name models.MetricName, val int) error {
