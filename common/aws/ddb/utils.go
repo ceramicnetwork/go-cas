@@ -3,6 +3,7 @@ package ddb
 import (
 	"context"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -44,4 +45,12 @@ func tableExists(ctx context.Context, client *dynamodb.Client, table string) (bo
 	} else {
 		return output.Table.TableStatus == types.TableStatusActive, nil
 	}
+}
+
+func tsDecode(ts string) (time.Time, error) {
+	msec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(msec), nil
 }

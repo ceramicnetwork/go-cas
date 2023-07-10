@@ -2,12 +2,11 @@ package ddb
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"time"
-
-	"github.com/google/uuid"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -15,6 +14,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/ceramicnetwork/go-cas/models"
 )
+
+const idTsIndex = "id-ts-index"
 
 type JobDatabase struct {
 	ddbClient *dynamodb.Client
@@ -61,23 +62,17 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 	return createTable(ctx, jdb.ddbClient, &createJobTableInput)
 }
 
-func (jdb *JobDatabase) CreateJob(ctx context.Context) error {
-	newJob := map[string]interface{}{
-		models.JobParam_Id:    uuid.New().String(),
-		models.JobParam_Ts:    time.Now(),
-		models.JobParam_Stage: models.DefaultJobState,
-		models.JobParam_Type:  models.JobType_Anchor,
-		models.JobParam_Params: map[string]interface{}{
-			models.JobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
-		},
-	}
+func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
+	newJob := models.NewJob(models.JobType_Anchor, map[string]interface{}{
+		models.JobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
+	})
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
 			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
 		}
 	})
 	if err != nil {
-		return err
+		return "", err
 	} else {
 		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
 		defer httpCancel()
@@ -86,6 +81,43 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) error {
 			TableName: aws.String(jdb.jobTable),
 			Item:      attributeValues,
 		})
-		return err
+		if err != nil {
+			return "", err
+		} else {
+			return newJob.Id, nil
+		}
+	}
+}
+
+func (jdb *JobDatabase) QueryJob(ctx context.Context, id string) (*models.JobState, error) {
+	queryInput := dynamodb.QueryInput{
+		TableName:                 aws.String(jdb.jobTable),
+		IndexName:                 aws.String(idTsIndex),
+		KeyConditionExpression:    aws.String("#id = :id"),
+		ExpressionAttributeNames:  map[string]string{"#id": "id"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":id": &types.AttributeValueMemberS{Value: id}},
+		ScanIndexForward:          aws.Bool(false), // descending order so we get the latest job state
+	}
+
+	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	defer httpCancel()
+
+	if queryOutput, err := jdb.ddbClient.Query(httpCtx, &queryInput); err != nil {
+		return nil, err
+	} else if queryOutput.Count > 0 {
+		job := new(models.JobState)
+		if err = attributevalue.UnmarshalMapWithOptions(queryOutput.Items[0], job, func(options *attributevalue.DecoderOptions) {
+			options.DecodeTime = attributevalue.DecodeTimeAttributes{
+				S: tsDecode,
+				N: tsDecode,
+			}
+		}); err != nil {
+			return nil, err
+		} else {
+			return job, nil
+		}
+	} else {
+		// A job specifically requested must be present
+		return nil, fmt.Errorf("job %s not found", id)
 	}
 }

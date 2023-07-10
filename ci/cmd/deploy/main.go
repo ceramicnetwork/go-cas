@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/google/uuid"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
@@ -38,17 +36,11 @@ func main() {
 }
 
 func createJob(ctx context.Context) error {
-	newJob := map[string]interface{}{
-		"id":    uuid.New().String(),
-		"ts":    time.Now(),
-		"stage": models.DefaultJobState,
-		"type":  models.JobType_Deploy,
-		"params": map[string]string{
-			"component": models.DeployComponent,
-			"sha":       "latest",
-			"shaTag":    os.Getenv("SHA_TAG"),
-		},
-	}
+	newJob := models.NewJob(models.JobType_Deploy, map[string]interface{}{
+		"component": models.DeployComponent,
+		"sha":       "latest",
+		"shaTag":    os.Getenv("SHA_TAG"),
+	})
 	// Marshal the CD Manager job into DynamoDB-JSON, which is different from regular JSON and requires data types to be
 	// specified explicitly. The time encode function ensures that the timestamp has millisecond-resolution, which is
 	// what the CD Manager expects.
