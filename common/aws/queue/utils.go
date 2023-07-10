@@ -26,31 +26,28 @@ const (
 	QueueType_DLQ      QueueType = "dlq"
 )
 
-const QueueMaxLinger = 250 * time.Millisecond
-const QueueDefaultVisibilityTimeout = 5 * time.Minute
-const QueueMaxReceiveCount = 3
+const defaultVisibilityTimeout = 5 * time.Minute
+const DefaultMaxReceiveCount = 3
 
 type QueueRedrivePolicy struct {
 	DeadLetterTargetArn string `json:"deadLetterTargetArn"`
 	MaxReceiveCount     int    `json:"maxReceiveCount"`
 }
 
-func CreateQueue(ctx context.Context, queueType QueueType, sqsClient *sqs.Client, redrivePolicy *QueueRedrivePolicy) (string, error) {
-	visibilityTimeout := QueueDefaultVisibilityTimeout
-	if configVisibilityTimeout, found := os.LookupEnv("QUEUE_VISIBILITY_TIMEOUT"); found {
-		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
-			visibilityTimeout = parsedVisibilityTimeout
-		}
+func CreateQueue(ctx context.Context, sqsClient *sqs.Client, opts PublisherOpts) (string, error) {
+	visibilityTimeout := defaultVisibilityTimeout
+	if opts.VisibilityTimeout != nil {
+		visibilityTimeout = *opts.VisibilityTimeout
 	}
 	createQueueIn := sqs.CreateQueueInput{
-		QueueName: aws.String(queueName(queueType)),
+		QueueName: aws.String(queueName(opts.QueueType)),
 		Attributes: map[string]string{
 			string(types.QueueAttributeNameVisibilityTimeout): strconv.Itoa(int(visibilityTimeout.Seconds())),
 		},
 	}
 	// Configure redrive policy, if specified.
-	if redrivePolicy != nil && len(redrivePolicy.DeadLetterTargetArn) > 0 && redrivePolicy.MaxReceiveCount > 0 {
-		marshaledRedrivePolicy, _ := json.Marshal(redrivePolicy)
+	if opts.RedrivePolicy != nil && len(opts.RedrivePolicy.DeadLetterTargetArn) > 0 && opts.RedrivePolicy.MaxReceiveCount > 0 {
+		marshaledRedrivePolicy, _ := json.Marshal(opts.RedrivePolicy)
 		createQueueIn.Attributes[string(types.QueueAttributeNameRedrivePolicy)] = string(marshaledRedrivePolicy)
 	}
 

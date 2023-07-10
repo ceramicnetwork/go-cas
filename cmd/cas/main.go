@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"log"
+	"math"
 	"os"
 	"os/signal"
+	"strconv"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -79,24 +82,19 @@ func main() {
 		log.Fatalf("main: failed to create metric service: %v", err)
 	}
 
-	// Flow:
-	// ====
-	// 1. Validation service:
-	//	- Read requests from Validate queue
-	//  - Deduplicate request stream/CIDs
-	//  - Post requests to Ready queue
-	// 2. Batching service:
-	//	- Read requests from Ready queue
-	//  - Accumulate requests until either batch is full or time runs out
-	//  - Post batches to Batch queue
-	// 3. Failure handling service:
-	//  - Monitor the DLQ
-	//  - Raise Discord alert for messages dropping through to the DLQ
-
 	// Queue publishers
-
+	var visibilityTimeout *time.Duration = nil
+	if configVisibilityTimeout, found := os.LookupEnv("QUEUE_VISIBILITY_TIMEOUT"); found {
+		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
+			visibilityTimeout = &parsedVisibilityTimeout
+		}
+	}
 	// Create the DLQ and prepare the redrive policy for the other queues
-	deadLetterQueue, err := queue.NewPublisher(serverCtx, queue.QueueType_DLQ, sqsClient, nil)
+	deadLetterQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{QueueType: queue.QueueType_DLQ, VisibilityTimeout: visibilityTimeout},
+	)
 	if err != nil {
 		log.Fatalf("main: failed to create dead-letter queue: %v", err)
 	}
@@ -106,27 +104,86 @@ func main() {
 	}
 	redrivePolicy := &queue.QueueRedrivePolicy{
 		DeadLetterTargetArn: dlqArn,
-		MaxReceiveCount:     queue.QueueMaxReceiveCount,
+		MaxReceiveCount:     queue.DefaultMaxReceiveCount,
 	}
-	validateQueue, err := queue.NewPublisher(serverCtx, queue.QueueType_Validate, sqsClient, redrivePolicy)
+	// Create the remaining queues
+	validateQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_Validate,
+			VisibilityTimeout: visibilityTimeout,
+			RedrivePolicy:     redrivePolicy,
+		},
+	)
 	if err != nil {
 		log.Fatalf("main: failed to create validate queue: %v", err)
 	}
-	readyQueue, err := queue.NewPublisher(serverCtx, queue.QueueType_Ready, sqsClient, redrivePolicy)
+	readyQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_Ready,
+			VisibilityTimeout: visibilityTimeout,
+			RedrivePolicy:     redrivePolicy,
+		},
+	)
 	if err != nil {
 		log.Fatalf("main: failed to create ready queue: %v", err)
 	}
-	batchQueue, err := queue.NewPublisher(serverCtx, queue.QueueType_Batch, sqsClient, redrivePolicy)
+	// The Batch queue will generally have a larger visibility timeout given the usually long batch linger times. It
+	// will also allow a smaller maximum receive count before messages fall through to the DLQ. Detecting failures is
+	// harder given the longer visibility timeout, so it's important that they be detected as soon as possible.
+	batchVisibilityTimeout := visibilityTimeout
+	if configVisibilityTimeout, found := os.LookupEnv("BATCH_QUEUE_VISIBILITY_TIMEOUT"); found {
+		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
+			batchVisibilityTimeout = &parsedVisibilityTimeout
+		}
+	}
+	batchMaxReceiveCount := redrivePolicy.MaxReceiveCount
+	if configMaxReceiveCount, found := os.LookupEnv("BATCH_QUEUE_MAX_RECEIVE_COUNT"); found {
+		if parsedMaxReceiveCount, err := strconv.Atoi(configMaxReceiveCount); err == nil {
+			batchMaxReceiveCount = parsedMaxReceiveCount
+		}
+	}
+	batchQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_Batch,
+			VisibilityTimeout: batchVisibilityTimeout,
+			RedrivePolicy: &queue.QueueRedrivePolicy{
+				DeadLetterTargetArn: dlqArn,
+				MaxReceiveCount:     batchMaxReceiveCount,
+			},
+		},
+	)
 	if err != nil {
 		log.Fatalf("main: failed to create batch queue: %v", err)
 	}
-	statusQueue, err := queue.NewPublisher(serverCtx, queue.QueueType_Status, sqsClient, redrivePolicy)
+	statusQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_Status,
+			VisibilityTimeout: visibilityTimeout,
+			RedrivePolicy:     redrivePolicy,
+		},
+	)
 	if err != nil {
 		log.Fatalf("main: failed to create status queue: %v", err)
 	}
 	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
 	// failures could put messages back in the DLQ that are then re-consumed by the handler.
-	failureQueue, err := queue.NewPublisher(serverCtx, queue.QueueType_Failure, sqsClient, redrivePolicy)
+	failureQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_Failure,
+			VisibilityTimeout: visibilityTimeout,
+			RedrivePolicy:     redrivePolicy,
+		},
+	)
 	if err != nil {
 		log.Fatalf("main: failed to create failure queue: %v", err)
 	}
@@ -136,20 +193,36 @@ func main() {
 
 	// The Failure handling Service reads from the Failure and Dead-Letter queues
 	failureHandlingService := services.NewFailureHandlingService(discordHandler)
-	dlqConsumer := queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ)
-	failureConsumer := queue.NewConsumer(failureQueue, failureHandlingService.Failure)
+	dlqConsumer := queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ, nil)
+	failureConsumer := queue.NewConsumer(failureQueue, failureHandlingService.Failure, nil)
 
 	// The Status Service reads from the Status queue and updates the Anchor DB
 	statusService := services.NewStatusService(anchorDb)
-	statusConsumer := queue.NewConsumer(statusQueue, statusService.Status)
+	statusConsumer := queue.NewConsumer(statusQueue, statusService.Status, nil)
 
 	// The Batching Service reads from the Ready queue and posts to the Batch queue
+	anchorBatchSize := models.DefaultAnchorBatchSize
+	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
+		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
+			anchorBatchSize = parsedAnchorBatchSize
+		}
+	}
+	// Allow two batches worth of requests to be read and processed in parallel. This prevents a small number of workers
+	// from waiting on an incomplete batch to fill up without any more workers available to add to the batch.
+	maxBatchQueueWorkers := anchorBatchSize * 2
+	maxReceivedMessages := math.Ceil(float64(maxBatchQueueWorkers) * 1.2)
+	maxInflightRequests := math.Ceil(maxReceivedMessages / 10)
+
 	batchingService := services.NewBatchingService(serverCtx, batchQueue, metricService)
-	batchingConsumer := queue.NewConsumer(readyQueue, batchingService.Batch)
+	batchingConsumer := queue.NewConsumer(readyQueue, batchingService.Batch, &queue.ConsumerOpts{
+		MaxReceivedMessages: int(maxReceivedMessages),
+		MaxWorkers:          maxBatchQueueWorkers,
+		MaxInflightRequests: int(maxInflightRequests),
+	})
 
 	// The Validation Service reads from the Validate queue and posts to the Ready and Status queues
 	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue, metricService)
-	validationConsumer := queue.NewConsumer(validateQueue, validationService.Validate)
+	validationConsumer := queue.NewConsumer(validateQueue, validationService.Validate, nil)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
