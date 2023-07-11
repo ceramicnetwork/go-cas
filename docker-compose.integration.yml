@@ -13,7 +13,12 @@ services:
       - ETH_RPC_URL=http://ganache:8545
       - IPFS_URL=http://ceramic1_ipfs:5001
       - REMOTE_CERAMIC_URL=http://remote_ceramic:7007
-      - PUBSUB_TOPIC=integration-tests-docker
+      - PUBSUB_TOPIC=/integration-tests-docker
+      - AWS_ACCOUNT_ID=000000000000
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=.
+      - AWS_SECRET_ACCESS_KEY=.
+      - S3_ENDPOINT_URL=http://localstack:4566
     depends_on:
       remote_ceramic:
         condition: service_healthy

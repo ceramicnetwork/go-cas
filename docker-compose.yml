@@ -180,6 +180,8 @@ services:
       - SERVICES=sqs,dynamodb
     networks:
       - internal
+    volumes:
+      - ./aws:/etc/localstack/init/ready.d
     healthcheck:
       test:
         - CMD
