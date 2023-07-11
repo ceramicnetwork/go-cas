@@ -207,8 +207,10 @@ func main() {
 			anchorBatchSize = parsedAnchorBatchSize
 		}
 	}
-	// Allow two batches worth of requests to be read and processed in parallel. This prevents a small number of workers
-	// from waiting on an incomplete batch to fill up without any more workers available to add to the batch.
+	// Allocate a number of workers greater than the batch size. This prevents a small number of workers from waiting on
+	// an incomplete batch to fill up because there aren't any workers available to add to the batch even when messages
+	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
+	// and processed in parallel.
 	maxBatchQueueWorkers := anchorBatchSize * 2
 	maxReceivedMessages := math.Ceil(float64(maxBatchQueueWorkers) * 1.2)
 	maxInflightRequests := math.Ceil(maxReceivedMessages / 10)
