@@ -38,13 +38,19 @@ func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc, opts 
 }
 
 func (c Consumer) Start() {
-	log.Printf("%s: consumer starting", c.queueType)
+	log.Printf("%s: consumer starting...", c.queueType)
 	c.consumer.Start()
 	log.Printf("%s: consumer started", c.queueType)
 }
 
 func (c Consumer) Shutdown() {
-	log.Printf("%s: consumer stopping", c.queueType)
+	log.Printf("%s: consumer stopping...", c.queueType)
 	c.consumer.Shutdown()
 	log.Printf("%s: consumer stopped", c.queueType)
+}
+
+func (c Consumer) WaitForRxShutdown() {
+	log.Printf("%s: consumer rx stopping...", c.queueType)
+	c.consumer.WaitForRxShutdown()
+	log.Printf("%s: consumer rx stopped", c.queueType)
 }

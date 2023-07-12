@@ -2,12 +2,12 @@ module github.com/ceramicnetwork/go-cas
 
 go 1.19
 
-//replace github.com/abevier/go-sqs v0.0.0-20230130145351-c9d20b777567 => ../go-sqs
+replace github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3 => github.com/smrz2001/go-sqs v0.0.0-20230712192419-aca1b383d69c
 
 require (
 	dagger.io/dagger v0.7.1
 	github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3
-	github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829
+	github.com/abevier/tsk v0.0.0-20230712145722-249b1e98b01c
 	github.com/alexflint/go-arg v1.4.2
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.4

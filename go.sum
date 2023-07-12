@@ -40,10 +40,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/Khan/genqlient v0.5.0 h1:TMZJ+tl/BpbmGyIBiXzKzUftDhw4ZWxQZ+1ydn0gyII=
 github.com/Khan/genqlient v0.5.0/go.mod h1:EpIvDVXYm01GP6AXzjA7dKriPTH6GmtpmvTAwUUqIX8=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
-github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3 h1:2m6L9ds+gKN0wXSGn9628klf2fjiNKo7LT/AT0sKQVE=
-github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3/go.mod h1:ew2k5N7G1kT0WmPna1k48xPdThWhQscv2hrETXt7Hnw=
-github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829 h1:DFeide3v0BCOL+BVJltLiyMDImaeIQ+5LWsEBVmRpOE=
-github.com/abevier/tsk v0.0.0-20221228184442-7aa6a1d7f829/go.mod h1:5stFO5XvX4fFShiWpYidc8K6TNGpmOZrVXJjF2Nbhmw=
+github.com/abevier/tsk v0.0.0-20230712145722-249b1e98b01c h1:lmYm6DZwDH8IyZUBw1oqWjDk2KSn8v0zgkSPKa8gXFk=
+github.com/abevier/tsk v0.0.0-20230712145722-249b1e98b01c/go.mod h1:5stFO5XvX4fFShiWpYidc8K6TNGpmOZrVXJjF2Nbhmw=
 github.com/adrg/xdg v0.4.0 h1:RzRqFcjH4nE5C6oTAxhBtoE2IRyjBSa62SCbyPidvls=
 github.com/adrg/xdg v0.4.0/go.mod h1:N6ag73EX4wyxeaoeHctc1mas01KZgsj5tYiAIwqJE/E=
 github.com/agnivade/levenshtein v1.0.1/go.mod h1:CURSv5d9Uaml+FovSIICkLbAUZ9S4RqaHDIsdSBg7lM=
@@ -253,6 +251,8 @@ github.com/sasha-s/go-csync v0.0.0-20210812194225-61421b77c44b/go.mod h1:/pA7k3z
 github.com/sergi/go-diff v1.1.0 h1:we8PVUC3FE2uYfodKH/nBHMSetSfHDR6scGdBi+erh0=
 github.com/sergi/go-diff v1.1.0/go.mod h1:STckp+ISIX8hZLjrqAeVduY0gWCT9IjLuqbuNXdaHfM=
 github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeVRXNmyL/1OwPU0+IJeTBvfc=
+github.com/smrz2001/go-sqs v0.0.0-20230712192419-aca1b383d69c h1:TZRafwuAxRwqDuc54rCjEVM/YpacJKnQdPmbU3pyO8s=
+github.com/smrz2001/go-sqs v0.0.0-20230712192419-aca1b383d69c/go.mod h1:M7q0/I6zqUnyFx9PEUUrwPb59R4n2DEMhISw5vj8nPI=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
