@@ -52,20 +52,8 @@ func main() {
 		Name:     os.Getenv("PG_DB"),
 	})
 
-	// Use override endpoint, if specified, for state DB so that we can store jobs locally, while hitting regular AWS
-	// endpoints for other operations. This allows local testing without affecting live processes in AWS.
-	dbAwsCfg := awsCfg
-	stateDbEndpoint := os.Getenv("DB_AWS_ENDPOINT")
-	if len(stateDbEndpoint) > 0 {
-		log.Printf("main: using custom state db endpoint: %s", stateDbEndpoint)
-		dbAwsCfg, err = config.AwsConfigWithOverride(serverCtx, stateDbEndpoint)
-		if err != nil {
-			log.Fatalf("main: failed to create aws cfg: %v", err)
-		}
-	}
-
 	// HTTP clients
-	dynamoDbClient := dynamodb.NewFromConfig(dbAwsCfg)
+	dynamoDbClient := dynamodb.NewFromConfig(awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
 	stateDb := ddb.NewStateDb(serverCtx, dynamoDbClient)
@@ -191,16 +179,16 @@ func main() {
 	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load,
 	// and also maintaining backpressure on the queues.
 
-	// The Failure handling Service reads from the Failure and Dead-Letter queues
+	// The Failure handling service reads from the Failure and Dead-Letter queues
 	failureHandlingService := services.NewFailureHandlingService(discordHandler)
 	dlqConsumer := queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ, nil)
 	failureConsumer := queue.NewConsumer(failureQueue, failureHandlingService.Failure, nil)
 
-	// The Status Service reads from the Status queue and updates the Anchor DB
+	// The Status service reads from the Status queue and updates the Anchor DB
 	statusService := services.NewStatusService(anchorDb)
 	statusConsumer := queue.NewConsumer(statusQueue, statusService.Status, nil)
 
-	// The Batching Service reads from the Ready queue and posts to the Batch queue
+	// The Batching service reads from the Ready queue and posts to the Batch queue
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -222,7 +210,7 @@ func main() {
 		MaxInflightRequests: int(maxInflightRequests),
 	})
 
-	// The Validation Service reads from the Validate queue and posts to the Ready and Status queues
+	// The Validation service reads from the Validate queue and posts to the Ready and Status queues
 	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue, metricService)
 	validationConsumer := queue.NewConsumer(validateQueue, validationService.Validate, nil)
 
@@ -245,7 +233,27 @@ func main() {
 		//  - failure handling
 		//  - DLQ
 		validationConsumer.Shutdown()
-		batchingConsumer.Shutdown()
+
+		// The Batching service needs a special shutdown procedure:
+		//  - Start shutting down the queue consumer, which will prevent any new receive requests from being initiated.
+		//  - Wait for any in flight receive requests to complete, which will be signaled via `WaitForRxShutdown()`.
+		//  - Wait a few seconds (as a precaution) for any in flight messages to be picked up by workers, then flush the
+		//    batch. This will cause any lingering workers to complete their processing and allow the consumer to fully
+		//    shut down.
+		batchWg := sync.WaitGroup{}
+		batchWg.Add(2)
+		go func() {
+			defer batchWg.Done()
+			batchingConsumer.Shutdown()
+		}()
+		go func() {
+			defer batchWg.Done()
+			batchingConsumer.WaitForRxShutdown()
+			time.Sleep(5 * time.Second)
+			batchingService.Flush()
+		}()
+		batchWg.Wait()
+
 		statusConsumer.Shutdown()
 		failureConsumer.Shutdown()
 		dlqConsumer.Shutdown()

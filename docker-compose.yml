@@ -12,7 +12,6 @@ services:
       - AWS_ACCESS_KEY_ID=.
       - AWS_SECRET_ACCESS_KEY=.
       - AWS_ENDPOINT=http://localstack:4566
-      - DB_AWS_ENDPOINT=http://localstack:4566
       - PG_HOST=database
       - PG_PORT=5432
       - PG_USER=root

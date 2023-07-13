@@ -78,3 +78,10 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 	log.Printf("batch: generated batch: %v", anchorReqBatch)
 	return batchResults, nil
 }
+
+func (b BatchingService) Flush() {
+	// Flush the current batch however far along it's gotten in size or expiration. The caller needs to ensure that no
+	// more messages are sent to this service for processing once this function is called. Receiving more messages will
+	// cause workers to wait till the end of the batch expiration if there aren't enough messages to fill the batch.
+	b.batcher.Flush()
+}
