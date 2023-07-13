@@ -27,7 +27,9 @@ func TestPublishNewTip(t *testing.T) {
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
 		testAnchorRequest(t, receivedMessage, anchorRequest)
-		Assert(t, 0, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("publish request and replace old tip", func(t *testing.T) {
@@ -55,7 +57,9 @@ func TestPublishNewTip(t *testing.T) {
 		}
 		receivedMessage = waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, statusMessage)
-		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 }
 
@@ -79,7 +83,9 @@ func TestPublishOldTip(t *testing.T) {
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, newStatusMessage)
-		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 }
 
@@ -101,7 +107,9 @@ func TestReprocessTips(t *testing.T) {
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
 		testAnchorRequest(t, receivedMessage, anchorRequest)
-		Assert(t, 0, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("publish reprocessed request if tip exists but cid does not", func(t *testing.T) {
@@ -117,7 +125,9 @@ func TestReprocessTips(t *testing.T) {
 		}
 		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
 		testAnchorRequest(t, receivedMessage, anchorRequest)
-		Assert(t, 0, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 }
 
@@ -138,7 +148,9 @@ func TestCidExists(t *testing.T) {
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, statusMessage)
-		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("replace tip if cid exists", func(t *testing.T) {
@@ -154,7 +166,9 @@ func TestCidExists(t *testing.T) {
 		}
 		receivedMessage := waitForMesssages(statusPublisher.messages, 1)[0]
 		testStatusMessage(t, receivedMessage, statusMessage)
-		Assert(t, 1, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 
 	t.Run("replace newer and older tips if cid exists", func(t *testing.T) {
@@ -174,7 +188,9 @@ func TestCidExists(t *testing.T) {
 		receivedMessages := waitForMesssages(statusPublisher.messages, 2)
 		testStatusMessage(t, receivedMessages[0], statusMessage)
 		testStatusMessage(t, receivedMessages[1], newStatusMessage)
-		Assert(t, 2, metricService.counts[models.MetricName_ReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 2, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
 	})
 }
 

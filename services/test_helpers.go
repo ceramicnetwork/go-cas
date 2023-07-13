@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -151,6 +152,10 @@ func (m *MockPublisher) SendMessage(ctx context.Context, event any) (string, err
 
 }
 
+func (m *MockPublisher) GetUrl() string {
+	return ""
+}
+
 type MockBatchPublisher struct {
 	messages chan any
 	fail     bool
@@ -179,7 +184,7 @@ type MockQueueMonitor struct {
 	failCount   int
 }
 
-func (m *MockQueueMonitor) GetQueueUtilization(_ context.Context) (int, int, error) {
+func (m *MockQueueMonitor) GetUtilization(_ context.Context) (int, int, error) {
 	if m.failCount > 0 {
 		m.failCount--
 		return 0, 0, fmt.Errorf("failed to get utilization")
@@ -188,14 +193,32 @@ func (m *MockQueueMonitor) GetQueueUtilization(_ context.Context) (int, int, err
 }
 
 type MockMetricService struct {
-	counts map[models.MetricName]int
+	mx            sync.RWMutex
+	counts        map[models.MetricName]int
+	distributions map[models.MetricName]int
 }
 
 func (m *MockMetricService) Count(ctx context.Context, name models.MetricName, val int) error {
+	m.mx.Lock()
+	defer m.mx.Unlock()
 	if m.counts == nil {
 		m.counts = make(map[models.MetricName]int)
 	}
 	m.counts[name] = m.counts[name] + val
+	return nil
+}
+
+func (m *MockMetricService) Distribution(ctx context.Context, name models.MetricName, val int) error {
+	m.mx.Lock()
+	defer m.mx.Unlock()
+	if m.distributions == nil {
+		m.distributions = make(map[models.MetricName]int)
+	}
+	m.distributions[name] = val
+	return nil
+}
+
+func (m *MockMetricService) QueueGauge(ctx context.Context, name string, monitor models.QueueMonitor) error {
 	return nil
 }
 

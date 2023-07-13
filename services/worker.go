@@ -11,28 +11,39 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+const defaultAnchorBatchMonitorTick = 5 * time.Minute
+const defaultMaxAnchorWorkers = 1
+
 type WorkerService struct {
 	batchMonitor     models.QueueMonitor
 	jobDb            models.JobRepository
+	metricService    models.MetricService
 	monitorTick      time.Duration
 	maxAnchorWorkers int
 	anchorJobs       map[string]*models.JobState
 }
 
-func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobRepository) *WorkerService {
-	batchMonitorTick := models.DefaultAnchorBatchMonitorTick
+func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobRepository, metricService models.MetricService) *WorkerService {
+	batchMonitorTick := defaultAnchorBatchMonitorTick
 	if configBatchMonitorTick, found := os.LookupEnv("ANCHOR_BATCH_MONITOR_TICK"); found {
 		if parsedBatchMonitorTick, err := time.ParseDuration(configBatchMonitorTick); err == nil {
 			batchMonitorTick = parsedBatchMonitorTick
 		}
 	}
-	maxAnchorWorkers := models.DefaultMaxAnchorWorkers
+	maxAnchorWorkers := defaultMaxAnchorWorkers
 	if configMaxAnchorWorkers, found := os.LookupEnv("MAX_ANCHOR_WORKERS"); found {
 		if parsedMaxAnchorWorkers, err := strconv.Atoi(configMaxAnchorWorkers); err == nil {
 			maxAnchorWorkers = parsedMaxAnchorWorkers
 		}
 	}
-	return &WorkerService{batchMonitor, jobDb, batchMonitorTick, maxAnchorWorkers, make(map[string]*models.JobState)}
+	return &WorkerService{
+		batchMonitor,
+		jobDb,
+		metricService,
+		batchMonitorTick,
+		maxAnchorWorkers,
+		make(map[string]*models.JobState),
+	}
 }
 
 func (w WorkerService) Run(ctx context.Context) {
@@ -72,6 +83,7 @@ func (w WorkerService) launch(ctx context.Context) (int, error) {
 			}
 		}
 		log.Printf("worker: numJobsRequired=%d, anchorJobs=%v", numJobsRequired, w.anchorJobs)
+		w.metricService.Count(ctx, models.MetricName_WorkerJobCreated, numJobsCreated)
 		return numJobsCreated, err
 	}
 }
@@ -95,7 +107,7 @@ func (w WorkerService) calculateScaling(ctx context.Context) (int, int, error) {
 	// Alerting on the size of the batch queue backlog will inform us if jobs haven't been making progress while batches
 	// have continued to be created.
 	numExistingJobs := len(w.anchorJobs)
-	if numBatchesUnprocessed, _, err := w.batchMonitor.GetQueueUtilization(ctx); err != nil {
+	if numBatchesUnprocessed, _, err := w.batchMonitor.GetUtilization(ctx); err != nil {
 		return 0, 0, err
 	} else {
 		// The number of active workers can be used to observe the current throughput of the system. Each anchor worker

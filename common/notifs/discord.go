@@ -12,6 +12,7 @@ import (
 	"github.com/disgoorg/disgo/webhook"
 	"github.com/disgoorg/snowflake/v2"
 
+	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -83,7 +84,7 @@ func (d DiscordHandler) sendNotif(wh webhook.Client, title, desc string, color D
 	}
 	_, err := wh.CreateMessage(discord.NewWebhookMessageCreateBuilder().
 		SetEmbeds(messageEmbed).
-		SetUsername(models.ServiceName).
+		SetUsername(common.ServiceName).
 		Build(),
 		rest.WithDelay(DiscordPacing),
 	)

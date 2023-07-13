@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strconv"
 	"time"
 
@@ -11,14 +12,15 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
 type AnchorDatabase struct {
-	opts AnchorDbOpts
+	opts anchorDbOpts
 }
 
-type AnchorDbOpts struct {
+type anchorDbOpts struct {
 	Host     string
 	Port     string
 	User     string
@@ -26,17 +28,23 @@ type AnchorDbOpts struct {
 	Name     string
 }
 
-func NewAnchorDb(opts AnchorDbOpts) *AnchorDatabase {
-	return &AnchorDatabase{opts}
+func NewAnchorDb() *AnchorDatabase {
+	return &AnchorDatabase{anchorDbOpts{
+		Host:     os.Getenv(common.Env_PgHost),
+		Port:     os.Getenv(common.Env_PgPort),
+		User:     os.Getenv(common.Env_PgUser),
+		Password: os.Getenv(common.Env_PgPassword),
+		Name:     os.Getenv(common.Env_PgDb),
+	}}
 }
 
 func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequest, error) {
 	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
-	return adb.query(ctx, query, status, since.Format(models.DbDateFormat), limit)
+	return adb.query(ctx, query, status, since.Format(common.DbDateFormat), limit)
 }
 
 func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) ([]*models.AnchorRequest, error) {
-	dbCtx, dbCancel := context.WithTimeout(ctx, models.DefaultDbWaitTime)
+	dbCtx, dbCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer dbCancel()
 
 	connUrl := fmt.Sprintf(
@@ -83,7 +91,7 @@ func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (
 }
 
 func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, status models.RequestStatus, allowedSourceStatuses []models.RequestStatus) error {
-	dbCtx, dbCancel := context.WithTimeout(ctx, models.DefaultDbWaitTime)
+	dbCtx, dbCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer dbCancel()
 
 	connUrl := fmt.Sprintf(

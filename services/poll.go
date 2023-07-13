@@ -8,6 +8,9 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+const defaultTick = 1 * time.Second
+const dbLoadLimit = 100
+
 type RequestPoller struct {
 	anchorDb          models.AnchorRepository
 	stateDb           models.StateRepository
@@ -40,7 +43,7 @@ func (rp RequestPoller) Run(ctx context.Context) {
 				ctx,
 				models.RequestStatus_Pending,
 				since,
-				models.DbLoadLimit,
+				dbLoadLimit,
 			); err != nil {
 				log.Printf("requestpoll: error loading requests: %v", err)
 			} else if len(anchorReqs) > 0 {
@@ -69,7 +72,7 @@ func (rp RequestPoller) Run(ctx context.Context) {
 				}
 			}
 			// Sleep even if we had errors so that we don't get stuck in a tight loop
-			time.Sleep(models.DefaultTick)
+			time.Sleep(defaultTick)
 		}
 	}
 }

@@ -24,7 +24,7 @@ type BatchingService struct {
 
 func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
-	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
+	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
 			anchorBatchSize = parsedAnchorBatchSize
 		}
@@ -52,6 +52,7 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err != nil {
 		return err
 	}
+	b.metricService.Count(ctx, models.MetricName_BatchIngressRequest, 1)
 	if batchId, err := b.batcher.Submit(ctx, anchorReq); err != nil {
 		return err
 	} else {
@@ -61,11 +62,12 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 }
 
 func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
+	batchSize := len(anchorReqs)
 	anchorReqBatch := models.AnchorBatchMessage{
 		Id:  uuid.New(),
-		Ids: make([]uuid.UUID, len(anchorReqs)),
+		Ids: make([]uuid.UUID, batchSize),
 	}
-	batchResults := make([]results.Result[*uuid.UUID], len(anchorReqs))
+	batchResults := make([]results.Result[*uuid.UUID], batchSize)
 	for idx, anchorReq := range anchorReqs {
 		anchorReqBatch.Ids[idx] = anchorReq.Id
 		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
@@ -74,7 +76,8 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}
-	b.metricService.Count(ctx, models.MetricName_CreatedBatch, 1)
+	b.metricService.Count(ctx, models.MetricName_BatchCreated, 1)
+	b.metricService.Distribution(ctx, models.MetricName_BatchSize, batchSize)
 	log.Printf("batch: generated batch: %v", anchorReqBatch)
 	return batchResults, nil
 }

@@ -13,33 +13,25 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const (
-	Env_EnvTag = "ENV_TAG"
-)
-
-const (
-	EnvTag_Dev  = "dev"
-	EnvTag_Qa   = "qa"
-	EnvTag_Tnet = "tnet"
-	EnvTag_Prod = "prod"
-)
-
 func main() {
 	ctx := context.Background()
-	if err := createJob(ctx); err != nil {
+	if id, err := createJob(ctx); err != nil {
 		log.Fatalf("deploy: error creating deployment job: %v", err)
+	} else {
+		log.Printf("deploy: created job with id = %s", id)
 	}
 }
 
-func createJob(ctx context.Context) error {
+func createJob(ctx context.Context) (string, error) {
 	newJob := models.NewJob(models.JobType_Deploy, map[string]interface{}{
 		"component": models.DeployComponent,
 		"sha":       "latest",
-		"shaTag":    os.Getenv("SHA_TAG"),
+		"shaTag":    os.Getenv(cas.Env_ShaTag),
 	})
 	// Marshal the CD Manager job into DynamoDB-JSON, which is different from regular JSON and requires data types to be
 	// specified explicitly. The time encode function ensures that the timestamp has millisecond-resolution, which is
@@ -49,24 +41,26 @@ func createJob(ctx context.Context) error {
 			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
 		}
 	}); err != nil {
-		return err
+		return "", err
 	} else if awsCfg, err := config.AwsConfig(ctx); err != nil {
-		return err
+		return "", err
 	} else {
-		envTag := os.Getenv(Env_EnvTag)
+		envTag := os.Getenv(cas.Env_EnvTag)
 		client := dynamodb.NewFromConfig(awsCfg)
 		if _, err = client.PutItem(ctx, &dynamodb.PutItemInput{
 			TableName: aws.String(fmt.Sprintf("ceramic-%s-ops", envTag)),
 			Item:      attributeValues,
 		}); err != nil {
-			return err
-		} else if envTag == EnvTag_Dev {
+			return "", err
+		} else if envTag == cas.EnvTag_Dev {
 			// Also deploy to QA when deploying to Dev
-			_, err = client.PutItem(ctx, &dynamodb.PutItemInput{
-				TableName: aws.String(fmt.Sprintf("ceramic-%s-ops", EnvTag_Qa)),
+			if _, err = client.PutItem(ctx, &dynamodb.PutItemInput{
+				TableName: aws.String(fmt.Sprintf("ceramic-%s-ops", cas.EnvTag_Qa)),
 				Item:      attributeValues,
-			})
+			}); err != nil {
+				return "", err
+			}
 		}
-		return err
+		return newJob.Id, nil
 	}
 }
