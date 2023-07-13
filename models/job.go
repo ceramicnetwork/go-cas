@@ -25,7 +25,14 @@ const (
 	JobStage_Completed JobStage = "completed"
 )
 
-const JobParam_Version = "version"
+const (
+	JobParam_Version   = "version"
+	JobParam_Overrides = "overrides"
+)
+
+const (
+	AnchorOverrides_ContractAddress = "ETH_CONTRACT_ADDRESS"
+)
 
 type JobState struct {
 	Stage  JobStage               `dynamodbav:"stage"`
@@ -38,7 +45,7 @@ type JobState struct {
 func NewJob(jobType JobType, params map[string]interface{}) JobState {
 	return JobState{
 		Stage:  JobStage_Queued,
-		Ts:     time.Time{},
+		Ts:     time.Now(),
 		Id:     uuid.New().String(),
 		Type:   jobType,
 		Params: params,
