@@ -63,9 +63,16 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 }
 
 func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
-	newJob := models.NewJob(models.JobType_Anchor, map[string]interface{}{
+	jobParams := map[string]interface{}{
 		models.JobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
-	})
+	}
+	// If an override anchor contract address is available, pass it through to the job.
+	if contractAddress, found := os.LookupEnv("ANCHOR_CONTRACT_ADDRESS"); found {
+		jobParams[models.JobParam_Overrides] = map[string]string{
+			models.AnchorOverrides_ContractAddress: contractAddress,
+		}
+	}
+	newJob := models.NewJob(models.JobType_Anchor, jobParams)
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
 			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
