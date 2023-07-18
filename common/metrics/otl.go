@@ -37,10 +37,10 @@ func NewMetricService(ctx context.Context) (models.MetricService, error) {
 	}
 
 	var exporter sdk.Exporter
-	collectorHost := os.Getenv(common.Env_CollectorHost)
-	if collectorHost != "" {
-		options := otlpmetrichttp.WithEndpoint(collectorHost + ":4318")
-		exporter, err = otlpmetrichttp.New(ctx, options)
+	if _, found := os.LookupEnv(common.Env_MetricsEndpoint); found {
+		// The full endpoint URL will be taken from OTEL_EXPORTER_OTLP_METRICS_ENDPOINT. This allows testing locally
+		// with an insecure endpoint and in actual infrastructure with a secure endpoint.
+		exporter, err = otlpmetrichttp.New(ctx)
 		if err != nil {
 			return &OtlMetricService{}, err
 		}

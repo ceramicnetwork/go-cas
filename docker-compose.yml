@@ -19,7 +19,7 @@ services:
       - PG_DB=anchor_db
       - ANCHOR_BATCH_SIZE=4
       - ANCHOR_BATCH_LINGER=5m
-      - COLLECTOR_HOST=collector
+      - OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://collector:4318/v1/metrics
     depends_on:
       localstack:
         condition: service_healthy
@@ -267,6 +267,8 @@ services:
       - 4317:4317 # OTLP gRPC receiver
       - 4318:4318 # OTLP http receiver
       - 55679:55679 # zpages extension
+    networks:
+      - internal
 
 networks:
   internal:
