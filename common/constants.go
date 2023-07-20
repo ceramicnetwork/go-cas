@@ -2,7 +2,7 @@ package common
 
 import "time"
 
-const DefaultRpcWaitTime = 10 * time.Second
+const DefaultRpcWaitTime = 30 * time.Second
 
 const DbDateFormat = "2006-01-02 15:04:05.000000"
 

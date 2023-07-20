@@ -2,7 +2,7 @@ module github.com/ceramicnetwork/go-cas
 
 go 1.19
 
-replace github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3 => github.com/smrz2001/go-sqs v0.0.0-20230712192419-aca1b383d69c
+replace github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3 => github.com/smrz2001/go-sqs v0.0.0-20230720211106-4732a0a8906e
 
 require (
 	dagger.io/dagger v0.7.1

@@ -7,31 +7,24 @@ import (
 	"github.com/abevier/go-sqs/gosqs"
 )
 
-const defaultConsumerMaxWorkers = 100
-
-type ConsumerOpts struct {
-	MaxReceivedMessages int
-	MaxWorkers          int
-	MaxInflightRequests int
-}
+const defaultNumConsumerWorkers = 100
 
 type Consumer struct {
 	queueType QueueType
 	consumer  *gosqs.SQSConsumer
 }
 
-func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc, opts *ConsumerOpts) *Consumer {
-	maxWorkers := defaultConsumerMaxWorkers
+func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc, numWorkers *int) *Consumer {
+	var maxWorkers float64 = defaultNumConsumerWorkers
+	if numWorkers != nil {
+		// Don't go below the default number of workers
+		maxWorkers = math.Max(maxWorkers, float64(*numWorkers))
+	}
 	maxReceivedMessages := math.Ceil(float64(maxWorkers) * 1.2)
 	maxInflightRequests := math.Ceil(maxReceivedMessages / 10)
-	if opts != nil {
-		maxReceivedMessages = float64(opts.MaxReceivedMessages)
-		maxWorkers = opts.MaxWorkers
-		maxInflightRequests = float64(opts.MaxInflightRequests)
-	}
 	qOpts := gosqs.Opts{
 		MaxReceivedMessages:               int(maxReceivedMessages),
-		MaxWorkers:                        maxWorkers,
+		MaxWorkers:                        int(maxWorkers),
 		MaxInflightReceiveMessageRequests: int(maxInflightRequests),
 	}
 	return &Consumer{publisher.queueType, gosqs.NewConsumer(qOpts, publisher.publisher, callback)}
