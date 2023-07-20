@@ -251,8 +251,8 @@ github.com/sasha-s/go-csync v0.0.0-20210812194225-61421b77c44b/go.mod h1:/pA7k3z
 github.com/sergi/go-diff v1.1.0 h1:we8PVUC3FE2uYfodKH/nBHMSetSfHDR6scGdBi+erh0=
 github.com/sergi/go-diff v1.1.0/go.mod h1:STckp+ISIX8hZLjrqAeVduY0gWCT9IjLuqbuNXdaHfM=
 github.com/shurcooL/sanitized_anchor_name v1.0.0/go.mod h1:1NzhyTcUVG4SuEtjjoZeVRXNmyL/1OwPU0+IJeTBvfc=
-github.com/smrz2001/go-sqs v0.0.0-20230712192419-aca1b383d69c h1:TZRafwuAxRwqDuc54rCjEVM/YpacJKnQdPmbU3pyO8s=
-github.com/smrz2001/go-sqs v0.0.0-20230712192419-aca1b383d69c/go.mod h1:M7q0/I6zqUnyFx9PEUUrwPb59R4n2DEMhISw5vj8nPI=
+github.com/smrz2001/go-sqs v0.0.0-20230720211106-4732a0a8906e h1:o6NhjEzShT0sqde9wn2ZbfaT3Lk5XlHdijocrmdJZKU=
+github.com/smrz2001/go-sqs v0.0.0-20230720211106-4732a0a8906e/go.mod h1:M7q0/I6zqUnyFx9PEUUrwPb59R4n2DEMhISw5vj8nPI=
 github.com/spaolacci/murmur3 v0.0.0-20180118202830-f09979ecbc72/go.mod h1:JwIasOWyU6f++ZhiEuf87xNszmSA2myDM2Kzu9HwQUA=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

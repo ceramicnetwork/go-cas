@@ -11,7 +11,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const defaultAnchorBatchMonitorTick = 5 * time.Minute
+const defaultAnchorBatchMonitorTick = 30 * time.Second
 const defaultMaxAnchorWorkers = 1
 
 type WorkerService struct {
@@ -55,13 +55,13 @@ func (w WorkerService) Run(ctx context.Context) {
 			log.Printf("worker: stopped")
 			return
 		case <-tick.C:
-			numJobsCreated, err := w.launch(ctx)
+			numJobsCreated, err := w.createJobs(ctx)
 			log.Printf("worker: created %d jobs, error = %v", numJobsCreated, err)
 		}
 	}
 }
 
-func (w WorkerService) launch(ctx context.Context) (int, error) {
+func (w WorkerService) createJobs(ctx context.Context) (int, error) {
 	if numJobsRequired, numExistingJobs, err := w.calculateScaling(ctx); err != nil {
 		return 0, err
 	} else {
