@@ -12,6 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+
+	"github.com/ceramicnetwork/go-cas"
+	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -23,7 +26,7 @@ type JobDatabase struct {
 }
 
 func NewJobDb(ctx context.Context, ddbClient *dynamodb.Client) *JobDatabase {
-	jobTable := "ceramic-" + os.Getenv("ENV") + "-ops"
+	jobTable := "ceramic-" + os.Getenv(cas.Env_Env) + "-ops"
 	jdb := JobDatabase{ddbClient, jobTable}
 	if err := jdb.createJobTable(ctx); err != nil {
 		log.Fatalf("job: table creation failed: %v", err)
@@ -67,7 +70,7 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 		models.JobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
 	}
 	// If an override anchor contract address is available, pass it through to the job.
-	if contractAddress, found := os.LookupEnv("ANCHOR_CONTRACT_ADDRESS"); found {
+	if contractAddress, found := os.LookupEnv(models.Env_AnchorContractAddress); found {
 		jobParams[models.JobParam_Overrides] = map[string]string{
 			models.AnchorOverrides_ContractAddress: contractAddress,
 		}
@@ -81,7 +84,7 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	} else {
-		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 		defer httpCancel()
 
 		_, err = jdb.ddbClient.PutItem(httpCtx, &dynamodb.PutItemInput{
@@ -106,7 +109,7 @@ func (jdb *JobDatabase) QueryJob(ctx context.Context, id string) (*models.JobSta
 		ScanIndexForward:          aws.Bool(false), // descending order so we get the latest job state
 	}
 
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if queryOutput, err := jdb.ddbClient.Query(httpCtx, &queryInput); err != nil {

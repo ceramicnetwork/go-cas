@@ -16,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
+	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
@@ -28,7 +29,7 @@ import (
 
 func main() {
 	envFile := "env/.env"
-	if envTag, found := os.LookupEnv(models.Env_EnvTag); found {
+	if envTag, found := os.LookupEnv(cas.Env_EnvTag); found {
 		envFile += "." + envTag
 	}
 	if err := godotenv.Load(envFile); err != nil {
@@ -44,13 +45,7 @@ func main() {
 		log.Fatalf("main: error creating aws cfg: %v", err)
 	}
 
-	anchorDb := db.NewAnchorDb(db.AnchorDbOpts{
-		Host:     os.Getenv("PG_HOST"),
-		Port:     os.Getenv("PG_PORT"),
-		User:     os.Getenv("PG_USER"),
-		Password: os.Getenv("PG_PASSWORD"),
-		Name:     os.Getenv("PG_DB"),
-	})
+	anchorDb := db.NewAnchorDb()
 
 	// HTTP clients
 	dynamoDbClient := dynamodb.NewFromConfig(awsCfg)
@@ -64,8 +59,7 @@ func main() {
 		log.Fatalf("main: failed to create discord handler: %v", err)
 	}
 
-	collectorHost := os.Getenv("COLLECTOR_HOST")
-	metricService, err := metrics.NewMetricService(serverCtx, collectorHost)
+	metricService, err := metrics.NewMetricService(serverCtx)
 	if err != nil {
 		log.Fatalf("main: failed to create metric service: %v", err)
 	}
@@ -86,7 +80,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("main: failed to create dead-letter queue: %v", err)
 	}
-	dlqArn, err := queue.GetQueueArn(serverCtx, deadLetterQueue.QueueUrl, sqsClient)
+	dlqArn, err := queue.GetQueueArn(serverCtx, deadLetterQueue.GetUrl(), sqsClient)
 	if err != nil {
 		log.Fatalf("main: failed to fetch dead-letter queue arn: %v", err)
 	}
@@ -94,7 +88,22 @@ func main() {
 		DeadLetterTargetArn: dlqArn,
 		MaxReceiveCount:     queue.DefaultMaxReceiveCount,
 	}
-	// Create the remaining queues
+	// Failure queue
+	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
+	// failures could put messages back in the DLQ that are then re-consumed by the handler.
+	failureQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_Failure,
+			VisibilityTimeout: visibilityTimeout,
+			RedrivePolicy:     redrivePolicy,
+		},
+	)
+	if err != nil {
+		log.Fatalf("main: failed to create failure queue: %v", err)
+	}
+	// Validate queue
 	validateQueue, err := queue.NewPublisher(
 		serverCtx,
 		sqsClient,
@@ -107,6 +116,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("main: failed to create validate queue: %v", err)
 	}
+	// Ready queue
 	readyQueue, err := queue.NewPublisher(
 		serverCtx,
 		sqsClient,
@@ -149,6 +159,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("main: failed to create batch queue: %v", err)
 	}
+	// Status queue
 	statusQueue, err := queue.NewPublisher(
 		serverCtx,
 		sqsClient,
@@ -161,26 +172,33 @@ func main() {
 	if err != nil {
 		log.Fatalf("main: failed to create status queue: %v", err)
 	}
-	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
-	// failures could put messages back in the DLQ that are then re-consumed by the handler.
-	failureQueue, err := queue.NewPublisher(
-		serverCtx,
-		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_Failure,
-			VisibilityTimeout: visibilityTimeout,
-			RedrivePolicy:     redrivePolicy,
-		},
-	)
-	if err != nil {
-		log.Fatalf("main: failed to create failure queue: %v", err)
+
+	// Create utilization gauges for all the queues
+	if err = metricService.QueueGauge(serverCtx, deadLetterQueue.GetName(), queue.NewMonitor(deadLetterQueue.GetUrl(), sqsClient)); err != nil {
+		log.Fatalf("main: failed to create utilization gauge for dead-letter queue: %v", err)
+	}
+	if err = metricService.QueueGauge(serverCtx, failureQueue.GetName(), queue.NewMonitor(failureQueue.GetUrl(), sqsClient)); err != nil {
+		log.Fatalf("main: failed to create utilization gauge for failure queue: %v", err)
+	}
+	if err = metricService.QueueGauge(serverCtx, validateQueue.GetName(), queue.NewMonitor(validateQueue.GetUrl(), sqsClient)); err != nil {
+		log.Fatalf("main: failed to create utilization gauge for validate queue: %v", err)
+	}
+	if err = metricService.QueueGauge(serverCtx, readyQueue.GetName(), queue.NewMonitor(readyQueue.GetUrl(), sqsClient)); err != nil {
+		log.Fatalf("main: failed to create utilization gauge for ready queue: %v", err)
+	}
+	batchMonitor := queue.NewMonitor(batchQueue.GetUrl(), sqsClient)
+	if err = metricService.QueueGauge(serverCtx, batchQueue.GetName(), batchMonitor); err != nil {
+		log.Fatalf("main: failed to create utilization gauge for batch queue: %v", err)
+	}
+	if err = metricService.QueueGauge(serverCtx, statusQueue.GetName(), queue.NewMonitor(statusQueue.GetUrl(), sqsClient)); err != nil {
+		log.Fatalf("main: failed to create utilization gauge for status queue: %v", err)
 	}
 
-	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load,
-	// and also maintaining backpressure on the queues.
+	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load and
+	// also maintaining backpressure on the queues.
 
 	// The Failure handling service reads from the Failure and Dead-Letter queues
-	failureHandlingService := services.NewFailureHandlingService(discordHandler)
+	failureHandlingService := services.NewFailureHandlingService(discordHandler, metricService)
 	dlqConsumer := queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ, nil)
 	failureConsumer := queue.NewConsumer(failureQueue, failureHandlingService.Failure, nil)
 
@@ -190,7 +208,7 @@ func main() {
 
 	// The Batching service reads from the Ready queue and posts to the Batch queue
 	anchorBatchSize := models.DefaultAnchorBatchSize
-	if configAnchorBatchSize, found := os.LookupEnv("ANCHOR_BATCH_SIZE"); found {
+	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
 			anchorBatchSize = parsedAnchorBatchSize
 		}
@@ -271,7 +289,7 @@ func main() {
 	go func() {
 		defer wg.Done()
 		// Monitor the Batch queue and spawn anchor workers accordingly
-		services.NewWorkerService(queue.NewMonitor(batchQueue.QueueUrl, sqsClient), jobDb).Run(serverCtx)
+		services.NewWorkerService(batchMonitor, jobDb, metricService).Run(serverCtx)
 	}()
 
 	dlqConsumer.Start()

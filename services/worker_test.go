@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 func TestRun(t *testing.T) {
@@ -72,7 +74,8 @@ func TestRun(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("MAX_ANCHOR_WORKERS", strconv.FormatInt(int64(test.maxWorkers), 10))
-			workerService := NewWorkerService(test.monitor, test.jobDb)
+			metricService := &MockMetricService{}
+			workerService := NewWorkerService(test.monitor, test.jobDb, metricService)
 			if test.inflightJobs > 0 {
 				// Pre-run the service so that it creates jobs in flight
 				ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)
@@ -98,6 +101,7 @@ func TestRun(t *testing.T) {
 			if len(test.jobDb.jobStore) != totalNumJobs {
 				t.Errorf("incorrect number %d of remaining jobs, expected %d", len(test.jobDb.jobStore), totalNumJobs)
 			}
+			Assert(t, totalNumJobs, metricService.counts[models.MetricName_WorkerJobCreated], "Incorrect number of jobs created")
 		})
 	}
 }

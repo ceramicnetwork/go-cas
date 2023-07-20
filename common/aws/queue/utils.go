@@ -12,7 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
-	"github.com/ceramicnetwork/go-cas/models"
+	"github.com/ceramicnetwork/go-cas"
+	"github.com/ceramicnetwork/go-cas/common"
 )
 
 type QueueType string
@@ -51,7 +52,7 @@ func CreateQueue(ctx context.Context, sqsClient *sqs.Client, opts PublisherOpts)
 		createQueueIn.Attributes[string(types.QueueAttributeNameRedrivePolicy)] = string(marshaledRedrivePolicy)
 	}
 
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if createQueueOut, err := sqsClient.CreateQueue(httpCtx, &createQueueIn); err != nil {
@@ -83,7 +84,7 @@ func GetQueueUrl(ctx context.Context, queueType QueueType, sqsClient *sqs.Client
 		QueueName: aws.String(queueName(queueType)),
 	}
 
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if getQueueUrlOut, err := sqsClient.GetQueueUrl(httpCtx, &getQueueUrlIn); err != nil {
@@ -107,7 +108,7 @@ func getQueueAttributes(ctx context.Context, queueUrl string, sqsClient *sqs.Cli
 		AttributeNames: []types.QueueAttributeName{types.QueueAttributeNameAll},
 	}
 
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if getQueueAttrOut, err := sqsClient.GetQueueAttributes(httpCtx, &getQueueAttrIn); err != nil {
@@ -118,5 +119,5 @@ func getQueueAttributes(ctx context.Context, queueUrl string, sqsClient *sqs.Cli
 }
 
 func queueName(queueType QueueType) string {
-	return fmt.Sprintf("cas-anchor-%s-%s", os.Getenv("ENV"), string(queueType))
+	return fmt.Sprintf("cas-anchor-%s-%s", os.Getenv(cas.Env_Env), string(queueType))
 }

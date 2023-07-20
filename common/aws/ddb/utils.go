@@ -10,7 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/ceramicnetwork/go-cas/models"
+	"github.com/ceramicnetwork/go-cas/common"
 )
 
 const tableCreationRetries = 3
@@ -18,7 +18,7 @@ const tableCreationWait = 3 * time.Second
 
 func createTable(ctx context.Context, client *dynamodb.Client, createTableIn *dynamodb.CreateTableInput) error {
 	if exists, err := tableExists(ctx, client, *createTableIn.TableName); !exists {
-		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 		defer httpCancel()
 
 		if _, err = client.CreateTable(httpCtx, createTableIn); err != nil {
@@ -36,7 +36,7 @@ func createTable(ctx context.Context, client *dynamodb.Client, createTableIn *dy
 }
 
 func tableExists(ctx context.Context, client *dynamodb.Client, table string) (bool, error) {
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if output, err := client.DescribeTable(httpCtx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {

@@ -13,6 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"github.com/ceramicnetwork/go-cas"
+	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -24,7 +26,7 @@ type StateDatabase struct {
 }
 
 func NewStateDb(ctx context.Context, client *dynamodb.Client) *StateDatabase {
-	env := os.Getenv("ENV")
+	env := os.Getenv(cas.Env_Env)
 
 	tablePfx := "cas-anchor-" + env + "-"
 	checkpointTable := tablePfx + "checkpoint"
@@ -140,7 +142,7 @@ func (sdb *StateDatabase) GetCheckpoint(ctx context.Context, ckptType models.Che
 		TableName: aws.String(sdb.checkpointTable),
 	}
 
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	getItemOut, err := sdb.client.GetItem(httpCtx, &getItemIn)
@@ -152,14 +154,14 @@ func (sdb *StateDatabase) GetCheckpoint(ctx context.Context, ckptType models.Che
 		if err = attributevalue.UnmarshalMapWithOptions(getItemOut.Item, &checkpoint); err != nil {
 			return time.Time{}, err
 		}
-		parsedCheckpoint, _ := time.Parse(models.DbDateFormat, checkpoint.Value)
+		parsedCheckpoint, _ := time.Parse(common.DbDateFormat, checkpoint.Value)
 		return parsedCheckpoint, nil
 	}
 	return time.Time{}, nil
 }
 
 func (sdb *StateDatabase) UpdateCheckpoint(ctx context.Context, checkpointType models.CheckpointType, checkpoint time.Time) (bool, error) {
-	checkpointStr := checkpoint.Format(models.DbDateFormat)
+	checkpointStr := checkpoint.Format(common.DbDateFormat)
 	updateItemIn := dynamodb.UpdateItemInput{
 		Key: map[string]types.AttributeValue{
 			"name": &types.AttributeValueMemberS{Value: string(checkpointType)},
@@ -175,7 +177,7 @@ func (sdb *StateDatabase) UpdateCheckpoint(ctx context.Context, checkpointType m
 		UpdateExpression: aws.String("set #value = :value"),
 	}
 
-	httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if _, err := sdb.client.UpdateItem(httpCtx, &updateItemIn); err != nil {
@@ -204,7 +206,7 @@ func (sdb *StateDatabase) StoreCid(ctx context.Context, streamCid *models.Stream
 			Item:                     attributeValues,
 		}
 
-		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 		defer httpCancel()
 
 		if _, err = sdb.client.PutItem(httpCtx, &putItemIn); err != nil {
@@ -241,7 +243,7 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 			ReturnValues: types.ReturnValueAllOld,
 		}
 
-		httpCtx, httpCancel := context.WithTimeout(ctx, models.DefaultHttpWaitTime)
+		httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 		defer httpCancel()
 
 		if putItemOut, err := sdb.client.PutItem(httpCtx, &putItemIn); err != nil {

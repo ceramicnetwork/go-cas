@@ -15,19 +15,22 @@ const (
 )
 
 type FailureHandlingService struct {
-	notif models.Notifier
+	notif         models.Notifier
+	metricService models.MetricService
 }
 
-func NewFailureHandlingService(notif models.Notifier) *FailureHandlingService {
-	return &FailureHandlingService{notif}
+func NewFailureHandlingService(notif models.Notifier, metricService models.MetricService) *FailureHandlingService {
+	return &FailureHandlingService{notif, metricService}
 }
 
-func (b FailureHandlingService) Failure(_ context.Context, _ string) error {
+func (f FailureHandlingService) Failure(ctx context.Context, _ string) error {
 	// TODO: Implement handling for failures reported by other services
+	f.metricService.Count(ctx, models.MetricName_FailureMessage, 1)
 	return nil
 }
 
-func (b FailureHandlingService) DLQ(ctx context.Context, msgBody string) error {
+func (f FailureHandlingService) DLQ(ctx context.Context, msgBody string) error {
+	f.metricService.Count(ctx, models.MetricName_FailureDlqMessage, 1)
 	msgType := "Unknown"
 	// Unmarshal into one of the known message types
 	anchorReq := new(models.AnchorRequestMessage)
@@ -39,5 +42,5 @@ func (b FailureHandlingService) DLQ(ctx context.Context, msgBody string) error {
 			msgType = "Batch request"
 		}
 	}
-	return b.notif.SendAlert(ErrorTitle, fmt.Sprintf(ErrorMessageFmt_DLQ, msgType, msgBody))
+	return f.notif.SendAlert(ErrorTitle, fmt.Sprintf(ErrorMessageFmt_DLQ, msgType, msgBody))
 }

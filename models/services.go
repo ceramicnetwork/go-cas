@@ -25,11 +25,12 @@ type JobRepository interface {
 }
 
 type QueuePublisher interface {
+	GetUrl() string
 	SendMessage(ctx context.Context, event any) (string, error)
 }
 
 type QueueMonitor interface {
-	GetQueueUtilization(ctx context.Context) (int, int, error)
+	GetUtilization(ctx context.Context) (int, int, error)
 }
 
 type Notifier interface {
@@ -38,5 +39,7 @@ type Notifier interface {
 
 type MetricService interface {
 	Count(ctx context.Context, name MetricName, val int) error
+	Distribution(ctx context.Context, name MetricName, val int) error
+	QueueGauge(ctx context.Context, queueName string, monitor QueueMonitor) error
 	Shutdown(ctx context.Context)
 }

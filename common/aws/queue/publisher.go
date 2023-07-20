@@ -20,7 +20,7 @@ type PublisherOpts struct {
 
 type Publisher struct {
 	queueType QueueType
-	QueueUrl  string
+	queueUrl  string
 	publisher *gosqs.SQSPublisher
 }
 
@@ -36,8 +36,17 @@ func NewPublisher(ctx context.Context, sqsClient *sqs.Client, opts PublisherOpts
 				sqsClient,
 				queueUrl,
 				maxLinger,
-			)}, nil
+			),
+		}, nil
 	}
+}
+
+func (p Publisher) GetName() string {
+	return string(p.queueType)
+}
+
+func (p Publisher) GetUrl() string {
+	return p.queueUrl
 }
 
 func (p Publisher) SendMessage(ctx context.Context, event any) (string, error) {

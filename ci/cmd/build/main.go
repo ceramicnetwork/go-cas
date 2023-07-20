@@ -12,23 +12,11 @@ import (
 
 	"dagger.io/dagger"
 
+	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 )
 
-const EcrUserName = "AWS"
-
-const (
-	Env_EnvTag       = "ENV_TAG"
-	Env_AwsAccountId = "AWS_ACCOUNT_ID"
-	Env_AwsRegion    = "AWS_REGION"
-)
-
-const (
-	EnvTag_Dev  = "dev"
-	EnvTag_Qa   = "qa"
-	EnvTag_Tnet = "tnet"
-	EnvTag_Prod = "prod"
-)
+const ecrUserName = "AWS"
 
 func main() {
 	ctx := context.Background()
@@ -40,20 +28,20 @@ func main() {
 	defer client.Close()
 
 	contextDir := client.Host().Directory(".")
-	registry := os.Getenv(Env_AwsAccountId) + ".dkr.ecr." + os.Getenv(Env_AwsRegion) + ".amazonaws.com"
-	envTag := os.Getenv(Env_EnvTag)
+	registry := os.Getenv(cas.Env_AwsAccountId) + ".dkr.ecr." + os.Getenv(cas.Env_AwsRegion) + ".amazonaws.com"
+	envTag := os.Getenv(cas.Env_EnvTag)
 	container := contextDir.DockerBuild(dagger.DirectoryDockerBuildOpts{Platform: "linux/amd64"})
 	tags := []string{
 		envTag,
-		os.Getenv("BRANCH"),
-		os.Getenv("SHA"),
-		os.Getenv("SHA_TAG"),
+		os.Getenv(cas.Env_Branch),
+		os.Getenv(cas.Env_Sha),
+		os.Getenv(cas.Env_ShaTag),
 	}
 	// Only production images get the "latest" tag
-	if envTag == EnvTag_Prod {
+	if envTag == cas.EnvTag_Prod {
 		tags = append(tags, "latest")
-	} else if envTag == EnvTag_Dev {
-		tags = append(tags, EnvTag_Qa) // additionally tag with "qa" for images built from the "develop" branch
+	} else if envTag == cas.EnvTag_Dev {
+		tags = append(tags, cas.EnvTag_Qa) // additionally tag with "qa" for images built from the "develop" branch
 	}
 	if err = pushImage(ctx, client, container, registry, tags); err != nil {
 		log.Fatalf("build: failed to push image: %v", err)
@@ -85,6 +73,6 @@ func getEcrToken(ctx context.Context) string {
 		log.Fatalf("build: error decoding ecr auth token: %v", err)
 		return ""
 	} else {
-		return strings.TrimPrefix(string(authToken), EcrUserName+":")
+		return strings.TrimPrefix(string(authToken), ecrUserName+":")
 	}
 }

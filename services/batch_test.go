@@ -90,7 +90,7 @@ func TestBatch(t *testing.T) {
 				if len(test.publisher.messages) != 0 {
 					t.Errorf("Received %v messages but should have received none", len(test.publisher.messages))
 				}
-				Assert(t, 0, metricService.counts[models.MetricName_CreatedBatch], "Incorrect created batch count")
+				Assert(t, 0, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
 			} else {
 				// with 5 requests 2 batches should have been created
 				receivedMessages := waitForMesssages(test.publisher.messages, 2)
@@ -109,13 +109,16 @@ func TestBatch(t *testing.T) {
 
 				// make sure the batches have the correct number of requests in them, cannot ensure which request are in which batch
 				// as the batch requests are made simultaneously
+				numIngressRequests := 0
 				for i, numRequestsInBatch := range test.expectedNumberOfRequestsPerBatch {
 					if len(receivedBatches[i].Ids) != numRequestsInBatch {
 						t.Errorf("Expected %v requests in batch %v. Contained %v requests", numRequestsInBatch, i+1, len(receivedBatches[i].Ids))
 					}
+					numIngressRequests += numRequestsInBatch
 				}
 
-				Assert(t, 2, metricService.counts[models.MetricName_CreatedBatch], "Incorrect created batch count")
+				Assert(t, numIngressRequests, metricService.counts[models.MetricName_BatchIngressRequest], "Incorrect batch ingress request count")
+				Assert(t, 2, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
 			}
 		})
 	}
