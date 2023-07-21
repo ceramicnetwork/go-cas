@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -17,7 +16,8 @@ import (
 )
 
 type AnchorDatabase struct {
-	opts anchorDbOpts
+	opts   anchorDbOpts
+	logger models.Logger
 }
 
 type anchorDbOpts struct {
@@ -28,14 +28,14 @@ type anchorDbOpts struct {
 	Name     string
 }
 
-func NewAnchorDb() *AnchorDatabase {
+func NewAnchorDb(logger models.Logger) *AnchorDatabase {
 	return &AnchorDatabase{anchorDbOpts{
 		Host:     os.Getenv(common.Env_PgHost),
 		Port:     os.Getenv(common.Env_PgPort),
 		User:     os.Getenv(common.Env_PgUser),
 		Password: os.Getenv(common.Env_PgPassword),
 		Name:     os.Getenv(common.Env_PgDb),
-	}}
+	}, logger}
 }
 
 func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequest, error) {
@@ -57,14 +57,14 @@ func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (
 	)
 	conn, err := pgx.Connect(dbCtx, connUrl)
 	if err != nil {
-		log.Printf("query: error connecting to db: %v", err)
+		adb.logger.Errorf("query: error connecting to db: %v", err)
 		return nil, err
 	}
 	defer conn.Close(dbCtx)
 
 	rows, err := conn.Query(dbCtx, sql, args...)
 	if err != nil {
-		log.Printf("query: error querying db: %v", err)
+		adb.logger.Errorf("query: error querying db: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -82,7 +82,7 @@ func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (
 			&anchorReq.Metadata,
 		)
 		if err != nil {
-			log.Printf("query: error scanning db row: %v", err)
+			adb.logger.Errorf("query: error scanning db row: %v", err)
 			return nil, err
 		}
 		anchorRequests = append(anchorRequests, anchorReq)
@@ -104,7 +104,7 @@ func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 	)
 	conn, err := pgx.Connect(dbCtx, connUrl)
 	if err != nil {
-		log.Printf("update: error connecting to db: %v", err)
+		adb.logger.Errorf("update: error connecting to db: %v", err)
 		return err
 	}
 	defer conn.Close(dbCtx)
@@ -125,7 +125,7 @@ func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 		id,
 	)
 	if err != nil {
-		log.Printf("update: error updating db: %v", err)
+		adb.logger.Errorf("update: error updating db: %v", err)
 		return err
 	}
 	return nil

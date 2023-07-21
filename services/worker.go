@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"log"
 	"math"
 	"os"
 	"strconv"
@@ -21,9 +20,10 @@ type WorkerService struct {
 	monitorTick      time.Duration
 	maxAnchorWorkers int
 	anchorJobs       map[string]*models.JobState
+	logger           models.Logger
 }
 
-func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobRepository, metricService models.MetricService) *WorkerService {
+func NewWorkerService(logger models.Logger, batchMonitor models.QueueMonitor, jobDb models.JobRepository, metricService models.MetricService) *WorkerService {
 	batchMonitorTick := defaultAnchorBatchMonitorTick
 	if configBatchMonitorTick, found := os.LookupEnv("ANCHOR_BATCH_MONITOR_TICK"); found {
 		if parsedBatchMonitorTick, err := time.ParseDuration(configBatchMonitorTick); err == nil {
@@ -43,20 +43,21 @@ func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobReposito
 		batchMonitorTick,
 		maxAnchorWorkers,
 		make(map[string]*models.JobState),
+		logger,
 	}
 }
 
 func (w WorkerService) Run(ctx context.Context) {
-	log.Printf("worker: started")
+	w.logger.Infof("worker: started")
 	tick := time.NewTicker(w.monitorTick)
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("worker: stopped")
+			w.logger.Infof("worker: stopped")
 			return
 		case <-tick.C:
 			numJobsCreated, err := w.launch(ctx)
-			log.Printf("worker: created %d jobs, error = %v", numJobsCreated, err)
+			w.logger.Infof("worker: created %d jobs, error = %v", numJobsCreated, err)
 		}
 	}
 }
@@ -82,7 +83,7 @@ func (w WorkerService) launch(ctx context.Context) (int, error) {
 				w.anchorJobs[jobId] = nil
 			}
 		}
-		log.Printf("worker: numJobsRequired=%d, anchorJobs=%v", numJobsRequired, w.anchorJobs)
+		w.logger.Debugf("worker: numJobsRequired=%d, anchorJobs=%v", numJobsRequired, w.anchorJobs)
 		w.metricService.Count(ctx, models.MetricName_WorkerJobCreated, numJobsCreated)
 		return numJobsCreated, err
 	}

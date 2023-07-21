@@ -2,7 +2,6 @@ package ddb
 
 import (
 	"context"
-	"log"
 	"strconv"
 	"time"
 
@@ -11,13 +10,14 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/ceramicnetwork/go-cas/common"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 const tableCreationRetries = 3
 const tableCreationWait = 3 * time.Second
 
-func createTable(ctx context.Context, client *dynamodb.Client, createTableIn *dynamodb.CreateTableInput) error {
-	if exists, err := tableExists(ctx, client, *createTableIn.TableName); !exists {
+func createTable(ctx context.Context, logger models.Logger, client *dynamodb.Client, createTableIn *dynamodb.CreateTableInput) error {
+	if exists, err := tableExists(ctx, client, *createTableIn.TableName, logger); !exists {
 		httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 		defer httpCancel()
 
@@ -25,7 +25,7 @@ func createTable(ctx context.Context, client *dynamodb.Client, createTableIn *dy
 			return err
 		}
 		for i := 0; i < tableCreationRetries; i++ {
-			if exists, err = tableExists(ctx, client, *createTableIn.TableName); exists {
+			if exists, err = tableExists(ctx, client, *createTableIn.TableName, logger); exists {
 				return nil
 			}
 			time.Sleep(tableCreationWait)
@@ -35,12 +35,12 @@ func createTable(ctx context.Context, client *dynamodb.Client, createTableIn *dy
 	return nil
 }
 
-func tableExists(ctx context.Context, client *dynamodb.Client, table string) (bool, error) {
+func tableExists(ctx context.Context, client *dynamodb.Client, table string, logger models.Logger) (bool, error) {
 	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
 	if output, err := client.DescribeTable(httpCtx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {
-		log.Printf("dynamodb: table does not exist: %v", table)
+		logger.Infof("dynamodb: table does not exist: %v", table)
 		return false, err
 	} else {
 		return output.Table.TableStatus == types.TableStatusActive, nil

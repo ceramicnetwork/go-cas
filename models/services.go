@@ -43,3 +43,12 @@ type MetricService interface {
 	QueueGauge(ctx context.Context, queueName string, monitor QueueMonitor) error
 	Shutdown(ctx context.Context)
 }
+
+type Logger interface {
+	Infof(template string, args ...interface{})
+	Infoln(args ...interface{})
+	Fatalf(template string, args ...interface{})
+	Debugf(template string, args ...interface{})
+	Errorf(template string, args ...interface{})
+	Sync() error
+}

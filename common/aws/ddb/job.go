@@ -3,7 +3,6 @@ package ddb
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -23,13 +22,14 @@ const idTsIndex = "id-ts-index"
 type JobDatabase struct {
 	ddbClient *dynamodb.Client
 	jobTable  string
+	logger    models.Logger
 }
 
-func NewJobDb(ctx context.Context, ddbClient *dynamodb.Client) *JobDatabase {
+func NewJobDb(ctx context.Context, logger models.Logger, ddbClient *dynamodb.Client) *JobDatabase {
 	jobTable := "ceramic-" + os.Getenv(cas.Env_Env) + "-ops"
-	jdb := JobDatabase{ddbClient, jobTable}
+	jdb := JobDatabase{ddbClient, jobTable, logger}
 	if err := jdb.createJobTable(ctx); err != nil {
-		log.Fatalf("job: table creation failed: %v", err)
+		jdb.logger.Fatalf("job: table creation failed: %v", err)
 	}
 	return &jdb
 }
@@ -62,7 +62,7 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 			WriteCapacityUnits: aws.Int64(1),
 		},
 	}
-	return createTable(ctx, jdb.ddbClient, &createJobTableInput)
+	return createTable(ctx, jdb.logger, jdb.ddbClient, &createJobTableInput)
 }
 
 func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {

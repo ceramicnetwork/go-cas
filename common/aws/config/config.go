@@ -2,7 +2,6 @@ package config
 
 import (
 	"context"
-	"log"
 	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -30,7 +29,6 @@ func AwsConfigWithOverride(ctx context.Context, customEndpoint string) (aws.Conf
 func AwsConfig(ctx context.Context) (aws.Config, error) {
 	awsEndpoint := os.Getenv(cas.Env_AwsEndpoint)
 	if len(awsEndpoint) > 0 {
-		log.Printf("config: using custom global aws endpoint: %s", awsEndpoint)
 		return AwsConfigWithOverride(ctx, awsEndpoint)
 	}
 

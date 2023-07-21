@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/ceramicnetwork/go-cas/common/loggers"
 )
 
 var originalCheckpoint = time.Now().Add(-time.Hour)
@@ -33,12 +35,14 @@ func TestPoller(t *testing.T) {
 		},
 	}
 
+	logger := loggers.NewTestLogger()
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			anchorRepo := &MockAnchorRepository{}
 			stateRepo := &MockStateRepository{checkpoint: originalCheckpoint}
 
-			rp := NewRequestPoller(anchorRepo, stateRepo, test.validatePublisher)
+			rp := NewRequestPoller(logger, anchorRepo, stateRepo, test.validatePublisher)
 
 			// T0 request poller starts
 			ctx, cancel := context.WithCancel(context.Background())

@@ -9,6 +9,7 @@ const (
 	Env_EnvTag       = "ENV_TAG"
 	Env_Sha          = "SHA"
 	Env_ShaTag       = "SHA_TAG"
+	Env_LogLevel     = "LOG_LEVEL"
 )
 
 const (
