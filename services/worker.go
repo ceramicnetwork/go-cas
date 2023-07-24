@@ -13,14 +13,16 @@ import (
 
 const defaultAnchorBatchMonitorTick = 30 * time.Second
 const defaultMaxAnchorWorkers = 1
+const defaultAmortizationFactor = 1.0
 
 type WorkerService struct {
-	batchMonitor     models.QueueMonitor
-	jobDb            models.JobRepository
-	metricService    models.MetricService
-	monitorTick      time.Duration
-	maxAnchorWorkers int
-	anchorJobs       map[string]*models.JobState
+	batchMonitor       models.QueueMonitor
+	jobDb              models.JobRepository
+	metricService      models.MetricService
+	monitorTick        time.Duration
+	maxAnchorWorkers   int
+	amortizationFactor float64
+	anchorJobs         map[string]*models.JobState
 }
 
 func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobRepository, metricService models.MetricService) *WorkerService {
@@ -36,12 +38,19 @@ func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobReposito
 			maxAnchorWorkers = parsedMaxAnchorWorkers
 		}
 	}
+	amortizationFactor := defaultAmortizationFactor
+	if configAmortizationFactor, found := os.LookupEnv("ANCHOR_WORKER_AMORTIZATION"); found {
+		if parsedAmortizationFactor, err := strconv.ParseFloat(configAmortizationFactor, 64); err == nil {
+			amortizationFactor = parsedAmortizationFactor
+		}
+	}
 	return &WorkerService{
 		batchMonitor,
 		jobDb,
 		metricService,
 		batchMonitorTick,
 		maxAnchorWorkers,
+		amortizationFactor,
 		make(map[string]*models.JobState),
 	}
 }
@@ -62,7 +71,7 @@ func (w WorkerService) Run(ctx context.Context) {
 }
 
 func (w WorkerService) createJobs(ctx context.Context) (int, error) {
-	if numJobsRequired, numExistingJobs, err := w.calculateScaling(ctx); err != nil {
+	if numJobsRequired, numExistingJobs, err := w.calculateLoad(ctx); err != nil {
 		return 0, err
 	} else {
 		numJobsAllowed := 0
@@ -73,7 +82,8 @@ func (w WorkerService) createJobs(ctx context.Context) (int, error) {
 			// We can create workers upto the maximum allowed minus the number of jobs already created
 			numJobsAllowed = w.maxAnchorWorkers - numExistingJobs
 		}
-		numJobsToCreate := int(math.Min(float64(numJobsAllowed), float64(numJobsRequired)))
+		amortizedNumJobsAllowed := math.Ceil(float64(numJobsAllowed) * w.amortizationFactor)
+		numJobsToCreate := int(math.Min(amortizedNumJobsAllowed, float64(numJobsRequired)))
 		var numJobsCreated int
 		for numJobsCreated = 0; numJobsCreated < numJobsToCreate; numJobsCreated++ {
 			if jobId, err := w.jobDb.CreateJob(ctx); err != nil {
@@ -82,19 +92,19 @@ func (w WorkerService) createJobs(ctx context.Context) (int, error) {
 				w.anchorJobs[jobId] = nil
 			}
 		}
-		log.Printf("worker: numJobsRequired=%d, anchorJobs=%v", numJobsRequired, w.anchorJobs)
+		log.Printf("worker: numJobsRequired=%d, numExistingJobs=%v, numJobsAllowed=%v, amortizedNumJobsAllowed=%f, numJobsToCreate=%d, numJobsCreated=%d, anchorJobs=%v", numJobsRequired, numExistingJobs, numJobsAllowed, amortizedNumJobsAllowed, numJobsToCreate, numJobsCreated, w.anchorJobs)
 		w.metricService.Count(ctx, models.MetricName_WorkerJobCreated, numJobsCreated)
 		return numJobsCreated, err
 	}
 }
 
-func (w WorkerService) calculateScaling(ctx context.Context) (int, int, error) {
+func (w WorkerService) calculateLoad(ctx context.Context) (int, int, error) {
 	// Clean up finished jobs
 	for jobId, _ := range w.anchorJobs {
 		if jobState, err := w.jobDb.QueryJob(ctx, jobId); err != nil {
 			return 0, 0, err
 		} else if (jobState.Stage == models.JobStage_Completed) || (jobState.Stage == models.JobStage_Failed) {
-			// Clean out finished jobs - "completed" and "failed" are the only possible terminal stages for anchor jobs
+			// Clean out finished jobs - "completed" and "failed" are the only possible terminal stages for anchor jobs.
 			delete(w.anchorJobs, jobId)
 		} else {
 			w.anchorJobs[jobId] = jobState
@@ -107,15 +117,14 @@ func (w WorkerService) calculateScaling(ctx context.Context) (int, int, error) {
 	// Alerting on the size of the batch queue backlog will inform us if jobs haven't been making progress while batches
 	// have continued to be created.
 	numExistingJobs := len(w.anchorJobs)
-	if numBatchesUnprocessed, _, err := w.batchMonitor.GetUtilization(ctx); err != nil {
+	if numBatchesUnprocessed, numBatchesInflight, err := w.batchMonitor.GetUtilization(ctx); err != nil {
 		return 0, 0, err
 	} else {
-		// The number of active workers can be used to observe the current throughput of the system. Each anchor worker
-		// will process a single batch at a time, even if it continues to poll the queue for more batches as it gets
-		// done with earlier ones.
+		// The total number of unprocessed and inflight batches can be used to observe the current load on the system
+		// and thus to determine how many jobs need to be created to handle this load.
 		//
-		// The number of overflow batches (i.e. the surplus over the number of active workers) can be used to determine
-		// the additional ingress load on the anchoring system and thus the number of new workers required.
-		return int(math.Max(float64(numBatchesUnprocessed-numExistingJobs), 0)), numExistingJobs, nil
+		// Each anchor worker will process a single batch at a time, even if it continues to poll the queue for more
+		// batches as it gets done with earlier ones.
+		return int(math.Max(float64(numBatchesUnprocessed+numBatchesInflight-numExistingJobs), 0)), numExistingJobs, nil
 	}
 }
