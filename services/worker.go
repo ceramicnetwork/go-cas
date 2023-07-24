@@ -64,15 +64,16 @@ func (w WorkerService) Run(ctx context.Context) {
 			log.Printf("worker: stopped")
 			return
 		case <-tick.C:
-			numJobsCreated, err := w.createJobs(ctx)
-			log.Printf("worker: created %d jobs, error = %v", numJobsCreated, err)
+			if err := w.createJobs(ctx); err != nil {
+				log.Printf("worker: failed to create jobs: %v", err)
+			}
 		}
 	}
 }
 
-func (w WorkerService) createJobs(ctx context.Context) (int, error) {
+func (w WorkerService) createJobs(ctx context.Context) error {
 	if numJobsRequired, numExistingJobs, err := w.calculateLoad(ctx); err != nil {
-		return 0, err
+		return err
 	} else {
 		numJobsAllowed := 0
 		if w.maxAnchorWorkers == -1 {
@@ -94,7 +95,7 @@ func (w WorkerService) createJobs(ctx context.Context) (int, error) {
 		}
 		log.Printf("worker: numJobsRequired=%d, numExistingJobs=%v, numJobsAllowed=%v, amortizedNumJobsAllowed=%f, numJobsToCreate=%d, numJobsCreated=%d, anchorJobs=%v", numJobsRequired, numExistingJobs, numJobsAllowed, amortizedNumJobsAllowed, numJobsToCreate, numJobsCreated, w.anchorJobs)
 		w.metricService.Count(ctx, models.MetricName_WorkerJobCreated, numJobsCreated)
-		return numJobsCreated, err
+		return err
 	}
 }
 
