@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -82,6 +83,7 @@ func TestRun(t *testing.T) {
 		},
 	}
 	t.Setenv("ANCHOR_BATCH_MONITOR_TICK", "100ms")
+	logger := loggers.NewTestLogger()
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("MAX_ANCHOR_WORKERS", strconv.FormatInt(int64(test.maxWorkers), 10))
@@ -89,7 +91,7 @@ func TestRun(t *testing.T) {
 				t.Setenv("ANCHOR_WORKER_AMORTIZATION", strconv.FormatFloat(test.amortization, 'f', 2, 64))
 			}
 			metricService := &MockMetricService{}
-			workerService := NewWorkerService(test.monitor, test.jobDb, metricService)
+			workerService := NewWorkerService(logger, test.monitor, test.jobDb, metricService)
 			if test.inflightJobs > 0 {
 				// Pre-run the service so that it creates jobs in flight
 				ctx, cancel := context.WithTimeout(context.Background(), 350*time.Millisecond)

@@ -20,6 +20,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
 	"github.com/ceramicnetwork/go-cas/common/db"
+	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/common/metrics"
 	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/models"
@@ -34,33 +35,36 @@ func main() {
 	if err := godotenv.Load(envFile); err != nil {
 		log.Fatalf("Error loading %s: %v", envFile, err)
 	}
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
 	// Set up a server context
 	serverCtx, serverCtxCancel := context.WithCancel(context.Background())
 
+	// set up logger
+	logger := loggers.NewLogger()
+	defer logger.Sync()
+
 	awsCfg, err := config.AwsConfig(serverCtx)
 	if err != nil {
-		log.Fatalf("main: error creating aws cfg: %v", err)
+		logger.Fatalf("main: error creating aws cfg: %v", err)
 	}
 
-	anchorDb := db.NewAnchorDb()
+	anchorDb := db.NewAnchorDb(logger)
 
 	// HTTP clients
 	dynamoDbClient := dynamodb.NewFromConfig(awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)
 
-	stateDb := ddb.NewStateDb(serverCtx, dynamoDbClient)
-	jobDb := ddb.NewJobDb(serverCtx, dynamoDbClient)
+	stateDb := ddb.NewStateDb(serverCtx, logger, dynamoDbClient)
+	jobDb := ddb.NewJobDb(serverCtx, logger, dynamoDbClient)
 
-	discordHandler, err := notifs.NewDiscordHandler()
+	discordHandler, err := notifs.NewDiscordHandler(logger)
 	if err != nil {
-		log.Fatalf("main: failed to create discord handler: %v", err)
+		logger.Fatalf("main: failed to create discord handler: %v", err)
 	}
 
-	metricService, err := metrics.NewMetricService(serverCtx)
+	metricService, err := metrics.NewMetricService(serverCtx, logger)
 	if err != nil {
-		log.Fatalf("main: failed to create metric service: %v", err)
+		logger.Fatalf("main: failed to create metric service: %v", err)
 	}
 
 	// Queue publishers
@@ -77,11 +81,11 @@ func main() {
 		queue.PublisherOpts{QueueType: queue.QueueType_DLQ, VisibilityTimeout: visibilityTimeout},
 	)
 	if err != nil {
-		log.Fatalf("main: failed to create dead-letter queue: %v", err)
+		logger.Fatalf("main: failed to create dead-letter queue: %v", err)
 	}
 	dlqArn, err := queue.GetQueueArn(serverCtx, deadLetterQueue.GetUrl(), sqsClient)
 	if err != nil {
-		log.Fatalf("main: failed to fetch dead-letter queue arn: %v", err)
+		logger.Fatalf("main: failed to fetch dead-letter queue arn: %v", err)
 	}
 	redrivePolicy := &queue.QueueRedrivePolicy{
 		DeadLetterTargetArn: dlqArn,
@@ -100,7 +104,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		log.Fatalf("main: failed to create failure queue: %v", err)
+		logger.Fatalf("main: failed to create failure queue: %v", err)
 	}
 	// Validate queue
 	validateQueue, err := queue.NewPublisher(
@@ -113,7 +117,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		log.Fatalf("main: failed to create validate queue: %v", err)
+		logger.Fatalf("main: failed to create validate queue: %v", err)
 	}
 	// Ready queue
 	readyQueue, err := queue.NewPublisher(
@@ -126,7 +130,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		log.Fatalf("main: failed to create ready queue: %v", err)
+		logger.Fatalf("main: failed to create ready queue: %v", err)
 	}
 	// The Batch queue will generally have a larger visibility timeout given the usually long batch linger times. It
 	// will also allow a smaller maximum receive count before messages fall through to the DLQ. Detecting failures is
@@ -156,7 +160,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		log.Fatalf("main: failed to create batch queue: %v", err)
+		logger.Fatalf("main: failed to create batch queue: %v", err)
 	}
 	// Status queue
 	statusQueue, err := queue.NewPublisher(
@@ -169,28 +173,28 @@ func main() {
 		},
 	)
 	if err != nil {
-		log.Fatalf("main: failed to create status queue: %v", err)
+		logger.Fatalf("main: failed to create status queue: %v", err)
 	}
 
 	// Create utilization gauges for all the queues
 	if err = metricService.QueueGauge(serverCtx, deadLetterQueue.GetName(), queue.NewMonitor(deadLetterQueue.GetUrl(), sqsClient)); err != nil {
-		log.Fatalf("main: failed to create utilization gauge for dead-letter queue: %v", err)
+		logger.Fatalf("main: failed to create utilization gauge for dead-letter queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, failureQueue.GetName(), queue.NewMonitor(failureQueue.GetUrl(), sqsClient)); err != nil {
-		log.Fatalf("main: failed to create utilization gauge for failure queue: %v", err)
+		logger.Fatalf("main: failed to create utilization gauge for failure queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, validateQueue.GetName(), queue.NewMonitor(validateQueue.GetUrl(), sqsClient)); err != nil {
-		log.Fatalf("main: failed to create utilization gauge for validate queue: %v", err)
+		logger.Fatalf("main: failed to create utilization gauge for validate queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, readyQueue.GetName(), queue.NewMonitor(readyQueue.GetUrl(), sqsClient)); err != nil {
-		log.Fatalf("main: failed to create utilization gauge for ready queue: %v", err)
+		logger.Fatalf("main: failed to create utilization gauge for ready queue: %v", err)
 	}
 	batchMonitor := queue.NewMonitor(batchQueue.GetUrl(), sqsClient)
 	if err = metricService.QueueGauge(serverCtx, batchQueue.GetName(), batchMonitor); err != nil {
-		log.Fatalf("main: failed to create utilization gauge for batch queue: %v", err)
+		logger.Fatalf("main: failed to create utilization gauge for batch queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, statusQueue.GetName(), queue.NewMonitor(statusQueue.GetUrl(), sqsClient)); err != nil {
-		log.Fatalf("main: failed to create utilization gauge for status queue: %v", err)
+		logger.Fatalf("main: failed to create utilization gauge for status queue: %v", err)
 	}
 
 	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load and
@@ -198,12 +202,12 @@ func main() {
 
 	// The Failure handling service reads from the Failure and Dead-Letter queues
 	failureHandlingService := services.NewFailureHandlingService(discordHandler, metricService)
-	dlqConsumer := queue.NewConsumer(deadLetterQueue, failureHandlingService.DLQ, nil)
-	failureConsumer := queue.NewConsumer(failureQueue, failureHandlingService.Failure, nil)
+	dlqConsumer := queue.NewConsumer(logger, deadLetterQueue, failureHandlingService.DLQ, nil)
+	failureConsumer := queue.NewConsumer(logger, failureQueue, failureHandlingService.Failure, nil)
 
 	// The Status service reads from the Status queue and updates the Anchor DB
 	statusService := services.NewStatusService(anchorDb)
-	statusConsumer := queue.NewConsumer(statusQueue, statusService.Status, nil)
+	statusConsumer := queue.NewConsumer(logger, statusQueue, statusService.Status, nil)
 
 	// The Batching service reads from the Ready queue and posts to the Batch queue
 	anchorBatchSize := models.DefaultAnchorBatchSize
@@ -217,12 +221,12 @@ func main() {
 	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
 	// and processed in parallel.
 	maxBatchQueueWorkers := anchorBatchSize * 2
-	batchingService := services.NewBatchingService(serverCtx, batchQueue, metricService)
-	batchingConsumer := queue.NewConsumer(readyQueue, batchingService.Batch, &maxBatchQueueWorkers)
+	batchingService := services.NewBatchingService(serverCtx, logger, batchQueue, metricService)
+	batchingConsumer := queue.NewConsumer(logger, readyQueue, batchingService.Batch, &maxBatchQueueWorkers)
 
 	// The Validation service reads from the Validate queue and posts to the Ready and Status queues
-	validationService := services.NewValidationService(stateDb, readyQueue, statusQueue, metricService)
-	validationConsumer := queue.NewConsumer(validateQueue, validationService.Validate, nil)
+	validationService := services.NewValidationService(logger, stateDb, readyQueue, statusQueue, metricService)
+	validationConsumer := queue.NewConsumer(logger, validateQueue, validationService.Validate, nil)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -234,7 +238,7 @@ func main() {
 		interruptCh := make(chan os.Signal, 1)
 		signal.Notify(interruptCh, syscall.SIGTERM)
 		<-interruptCh
-		log.Println("main: shutdown started")
+		logger.Infoln("main: shutdown started")
 
 		// Shut down services in the order in which data goes through the pipeline:
 		//  - validation
@@ -274,14 +278,14 @@ func main() {
 		// Cancel the server context
 		serverCtxCancel()
 
-		log.Println("main: shutdown complete")
+		logger.Infoln("main: shutdown complete")
 	}()
 
 	// Start pipeline components in the opposite order in which data goes through
 	go func() {
 		defer wg.Done()
 		// Monitor the Batch queue and spawn anchor workers accordingly
-		services.NewWorkerService(batchMonitor, jobDb, metricService).Run(serverCtx)
+		services.NewWorkerService(logger, batchMonitor, jobDb, metricService).Run(serverCtx)
 	}()
 
 	dlqConsumer.Start()

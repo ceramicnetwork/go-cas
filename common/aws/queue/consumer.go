@@ -1,10 +1,10 @@
 package queue
 
 import (
-	"log"
 	"math"
 
 	"github.com/abevier/go-sqs/gosqs"
+	"github.com/ceramicnetwork/go-cas/models"
 )
 
 const defaultNumConsumerWorkers = 100
@@ -12,9 +12,10 @@ const defaultNumConsumerWorkers = 100
 type Consumer struct {
 	queueType QueueType
 	consumer  *gosqs.SQSConsumer
+	logger    models.Logger
 }
 
-func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc, numWorkers *int) *Consumer {
+func NewConsumer(logger models.Logger, publisher *Publisher, callback gosqs.MessageCallbackFunc, numWorkers *int) *Consumer {
 	var maxWorkers float64 = defaultNumConsumerWorkers
 	if numWorkers != nil {
 		// Don't go below the default number of workers
@@ -27,23 +28,23 @@ func NewConsumer(publisher *Publisher, callback gosqs.MessageCallbackFunc, numWo
 		MaxWorkers:                        int(maxWorkers),
 		MaxInflightReceiveMessageRequests: int(maxInflightRequests),
 	}
-	return &Consumer{publisher.queueType, gosqs.NewConsumer(qOpts, publisher.publisher, callback)}
+	return &Consumer{publisher.queueType, gosqs.NewConsumer(qOpts, publisher.publisher, callback), logger}
 }
 
 func (c Consumer) Start() {
-	log.Printf("%s: consumer starting...", c.queueType)
+	c.logger.Infof("%s: consumer starting...", c.queueType)
 	c.consumer.Start()
-	log.Printf("%s: consumer started", c.queueType)
+	c.logger.Infof("%s: consumer started", c.queueType)
 }
 
 func (c Consumer) Shutdown() {
-	log.Printf("%s: consumer stopping...", c.queueType)
+	c.logger.Infof("%s: consumer stopping...", c.queueType)
 	c.consumer.Shutdown()
-	log.Printf("%s: consumer stopped", c.queueType)
+	c.logger.Infof("%s: consumer stopped", c.queueType)
 }
 
 func (c Consumer) WaitForRxShutdown() {
-	log.Printf("%s: consumer rx stopping...", c.queueType)
+	c.logger.Infof("%s: consumer rx stopping...", c.queueType)
 	c.consumer.WaitForRxShutdown()
-	log.Printf("%s: consumer rx stopped", c.queueType)
+	c.logger.Infof("%s: consumer rx stopped", c.queueType)
 }

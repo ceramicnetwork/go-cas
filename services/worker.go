@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"log"
 	"math"
 	"os"
 	"strconv"
@@ -23,9 +22,10 @@ type WorkerService struct {
 	maxAnchorWorkers   int
 	amortizationFactor float64
 	anchorJobs         map[string]*models.JobState
+	logger             models.Logger
 }
 
-func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobRepository, metricService models.MetricService) *WorkerService {
+func NewWorkerService(logger models.Logger, batchMonitor models.QueueMonitor, jobDb models.JobRepository, metricService models.MetricService) *WorkerService {
 	batchMonitorTick := defaultAnchorBatchMonitorTick
 	if configBatchMonitorTick, found := os.LookupEnv("ANCHOR_BATCH_MONITOR_TICK"); found {
 		if parsedBatchMonitorTick, err := time.ParseDuration(configBatchMonitorTick); err == nil {
@@ -52,20 +52,21 @@ func NewWorkerService(batchMonitor models.QueueMonitor, jobDb models.JobReposito
 		maxAnchorWorkers,
 		amortizationFactor,
 		make(map[string]*models.JobState),
+		logger,
 	}
 }
 
 func (w WorkerService) Run(ctx context.Context) {
-	log.Printf("worker: started")
+	w.logger.Infof("worker: started")
 	tick := time.NewTicker(w.monitorTick)
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("worker: stopped")
+			w.logger.Infof("worker: stopped")
 			return
 		case <-tick.C:
 			if err := w.createJobs(ctx); err != nil {
-				log.Printf("worker: failed to create jobs: %v", err)
+				w.logger.Errorf("worker: failed to create jobs: %v", err)
 			}
 		}
 	}
@@ -93,7 +94,7 @@ func (w WorkerService) createJobs(ctx context.Context) error {
 				w.anchorJobs[jobId] = nil
 			}
 		}
-		log.Printf("worker: numJobsRequired=%d, numExistingJobs=%v, numJobsAllowed=%v, amortizedNumJobsAllowed=%f, numJobsToCreate=%d, numJobsCreated=%d, anchorJobs=%v", numJobsRequired, numExistingJobs, numJobsAllowed, amortizedNumJobsAllowed, numJobsToCreate, numJobsCreated, w.anchorJobs)
+		w.logger.Debugf("worker: numJobsRequired=%d, numExistingJobs=%v, numJobsAllowed=%v, amortizedNumJobsAllowed=%f, numJobsToCreate=%d, numJobsCreated=%d, anchorJobs=%v", numJobsRequired, numExistingJobs, numJobsAllowed, amortizedNumJobsAllowed, numJobsToCreate, numJobsCreated, w.anchorJobs)
 		w.metricService.Count(ctx, models.MetricName_WorkerJobCreated, numJobsCreated)
 		return err
 	}

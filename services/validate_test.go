@@ -9,19 +9,21 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
 func TestPublishNewTip(t *testing.T) {
 	anchorRequest, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
 	testCtx := context.Background()
+	logger := loggers.NewTestLogger()
 
 	t.Run("publish request if tip does not already exist", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
 		metricService := &MockMetricService{}
 
-		validator := NewValidationService(stateRepo, readyPublisher, nil, metricService)
+		validator := NewValidationService(logger, stateRepo, readyPublisher, nil, metricService)
 		if err := validator.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -43,7 +45,7 @@ func TestPublishNewTip(t *testing.T) {
 		stateRepo.UpdateTip(testCtx, streamTip)
 		stateRepo.StoreCid(testCtx, streamCid)
 
-		validator := NewValidationService(stateRepo, readyPublisher, statusPublisher, metricService)
+		validator := NewValidationService(logger, stateRepo, readyPublisher, statusPublisher, metricService)
 		if err := validator.Validate(testCtx, newEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -66,6 +68,7 @@ func TestPublishNewTip(t *testing.T) {
 func TestPublishOldTip(t *testing.T) {
 	_, _, streamTip, streamCid, _ := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
 	testCtx := context.Background()
+	logger := loggers.NewTestLogger()
 
 	t.Run("do not publish request if tip is older", func(t *testing.T) {
 		_, oldEncodedRequest, _, _, newStatusMessage := generateTestData(uuid.New(), "streamId", "newCid", "origin", -time.Millisecond)
@@ -77,7 +80,7 @@ func TestPublishOldTip(t *testing.T) {
 		stateRepo.UpdateTip(testCtx, streamTip)
 		stateRepo.StoreCid(testCtx, streamCid)
 
-		validator := NewValidationService(stateRepo, nil, statusPublisher, metricService)
+		validator := NewValidationService(logger, stateRepo, nil, statusPublisher, metricService)
 		if err := validator.Validate(testCtx, oldEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -92,6 +95,7 @@ func TestPublishOldTip(t *testing.T) {
 func TestReprocessTips(t *testing.T) {
 	anchorRequest, encodedRequest, streamTip, streamCid, _ := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
 	testCtx := context.Background()
+	logger := loggers.NewTestLogger()
 
 	t.Run("publish reprocessed request if tip and cid exist", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
@@ -101,7 +105,7 @@ func TestReprocessTips(t *testing.T) {
 		stateRepo.UpdateTip(testCtx, streamTip)
 		stateRepo.StoreCid(testCtx, streamCid)
 
-		validatorService := NewValidationService(stateRepo, readyPublisher, nil, metricService)
+		validatorService := NewValidationService(logger, stateRepo, readyPublisher, nil, metricService)
 		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -119,7 +123,7 @@ func TestReprocessTips(t *testing.T) {
 
 		stateRepo.UpdateTip(testCtx, streamTip)
 
-		validatorService := NewValidationService(stateRepo, readyPublisher, nil, metricService)
+		validatorService := NewValidationService(logger, stateRepo, readyPublisher, nil, metricService)
 		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -134,6 +138,7 @@ func TestReprocessTips(t *testing.T) {
 func TestCidExists(t *testing.T) {
 	_, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
 	testCtx := context.Background()
+	logger := loggers.NewTestLogger()
 
 	t.Run("do not publish request if tip does not exist but cid does", func(t *testing.T) {
 		stateRepo := &MockStateRepository{}
@@ -142,7 +147,7 @@ func TestCidExists(t *testing.T) {
 
 		stateRepo.StoreCid(testCtx, streamCid)
 
-		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
+		validatorService := NewValidationService(logger, stateRepo, nil, statusPublisher, metricService)
 		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -160,7 +165,7 @@ func TestCidExists(t *testing.T) {
 
 		stateRepo.StoreCid(testCtx, streamCid)
 
-		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
+		validatorService := NewValidationService(logger, stateRepo, nil, statusPublisher, metricService)
 		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}
@@ -181,7 +186,7 @@ func TestCidExists(t *testing.T) {
 		stateRepo.UpdateTip(testCtx, streamTip)
 		stateRepo.StoreCid(testCtx, streamCid)
 
-		validatorService := NewValidationService(stateRepo, nil, statusPublisher, metricService)
+		validatorService := NewValidationService(logger, stateRepo, nil, statusPublisher, metricService)
 		if err := validatorService.Validate(testCtx, newEncodedRequest); err != nil {
 			t.Errorf("unexpected error: %v", err)
 		}

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/google/uuid"
 )
@@ -29,6 +30,8 @@ func TestBatch(t *testing.T) {
 			encodedRequests[i] = string(requestMessage)
 		}
 	}
+
+	logger := loggers.NewTestLogger()
 
 	tests := map[string]struct {
 		publisher                        *MockPublisher
@@ -60,7 +63,7 @@ func TestBatch(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			metricService := &MockMetricService{}
-			batchingServices := NewBatchingService(testCtx, test.publisher, metricService)
+			batchingServices := NewBatchingService(testCtx, logger, test.publisher, metricService)
 			ctx, cancel := context.WithCancel(testCtx)
 
 			var wg sync.WaitGroup

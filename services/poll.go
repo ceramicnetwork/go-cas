@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/ceramicnetwork/go-cas/models"
@@ -15,13 +14,15 @@ type RequestPoller struct {
 	anchorDb          models.AnchorRepository
 	stateDb           models.StateRepository
 	validatePublisher models.QueuePublisher
+	logger            models.Logger
 }
 
-func NewRequestPoller(anchorDb models.AnchorRepository, stateDb models.StateRepository, validatePublisher models.QueuePublisher) *RequestPoller {
+func NewRequestPoller(logger models.Logger, anchorDb models.AnchorRepository, stateDb models.StateRepository, validatePublisher models.QueuePublisher) *RequestPoller {
 	return &RequestPoller{
 		anchorDb:          anchorDb,
 		stateDb:           stateDb,
 		validatePublisher: validatePublisher,
+		logger:            logger,
 	}
 }
 
@@ -29,9 +30,9 @@ func (rp RequestPoller) Run(ctx context.Context) {
 	// Start from the last checkpoint
 	prevCheckpoint, err := rp.stateDb.GetCheckpoint(ctx, models.CheckpointType_RequestPoll)
 	if err != nil {
-		log.Fatalf("requestpoll: error querying checkpoint: %v", err)
+		rp.logger.Fatalf("requestpoll: error querying checkpoint: %v", err)
 	}
-	log.Printf("requestpoll: start checkpoint: %s", prevCheckpoint)
+	rp.logger.Infof("requestpoll: start checkpoint: %s", prevCheckpoint)
 	since := prevCheckpoint
 
 	for {
@@ -45,7 +46,7 @@ func (rp RequestPoller) Run(ctx context.Context) {
 				since,
 				dbLoadLimit,
 			); err != nil {
-				log.Printf("requestpoll: error loading requests: %v", err)
+				rp.logger.Errorf("requestpoll: error loading requests: %v", err)
 			} else if len(anchorReqs) > 0 {
 				anchorReqMsgs := make([]*models.AnchorRequestMessage, len(anchorReqs))
 				for idx, anchorReq := range anchorReqs {
@@ -58,12 +59,12 @@ func (rp RequestPoller) Run(ctx context.Context) {
 						CreatedAt: anchorReq.CreatedAt,
 					}
 				}
-				log.Printf("requestpoll: found %d requests newer than %s", len(anchorReqs), since)
+				rp.logger.Debugf("requestpoll: found %d requests newer than %s", len(anchorReqs), since)
 				// It's possible the checkpoint was updated even if a particular request in the batch failed to be queued
 				if nextCheckpoint := rp.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(since) {
-					log.Printf("requestpoll: old=%s, new=%s", since, nextCheckpoint)
+					rp.logger.Debugf("requestpoll: old=%s, new=%s", since, nextCheckpoint)
 					if _, err = rp.stateDb.UpdateCheckpoint(ctx, models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
-						log.Printf("requestpoll: error updating checkpoint %s: %v", nextCheckpoint, err)
+						rp.logger.Errorf("requestpoll: error updating checkpoint %s: %v", nextCheckpoint, err)
 					} else {
 						// Only update checkpoint in-memory once it's been written to DB. This means that it's possible that
 						// we might reprocess Anchor DB entries, but we can handle this.
@@ -85,7 +86,7 @@ func (rp RequestPoller) sendRequestMessages(ctx context.Context, anchorReqs []*m
 		// still using two databases, make this sequential. Once we have a single database, we won't need the poller at
 		// all - the API can then write directly to DynamoDB/SQS.
 		if _, err := rp.validatePublisher.SendMessage(ctx, anchorReq); err != nil {
-			log.Printf("requestpoll: failed to send message: %v, %v", anchorReq, err)
+			rp.logger.Errorf("requestpoll: failed to send message: %v, %v", anchorReq, err)
 			break
 		}
 		processedCheckpoint = anchorReq.CreatedAt

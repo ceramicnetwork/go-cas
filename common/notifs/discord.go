@@ -1,7 +1,6 @@
 package notifs
 
 import (
-	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -32,9 +31,10 @@ type DiscordHandler struct {
 	alertWebhook   webhook.Client
 	warningWebhook webhook.Client
 	testWebhook    webhook.Client
+	logger         models.Logger
 }
 
-func NewDiscordHandler() (models.Notifier, error) {
+func NewDiscordHandler(logger models.Logger) (models.Notifier, error) {
 	if a, err := parseDiscordWebhookUrl("DISCORD_ALERT_WEBHOOK"); err != nil {
 		return nil, err
 	} else if w, err := parseDiscordWebhookUrl("DISCORD_WARNING_WEBHOOK"); err != nil {
@@ -42,7 +42,7 @@ func NewDiscordHandler() (models.Notifier, error) {
 	} else if t, err := parseDiscordWebhookUrl("DISCORD_TEST_WEBHOOK"); err != nil {
 		return nil, err
 	} else {
-		return &DiscordHandler{a, w, t}, nil
+		return &DiscordHandler{a, w, t, logger}, nil
 	}
 }
 
@@ -89,7 +89,7 @@ func (d DiscordHandler) sendNotif(wh webhook.Client, title, desc string, color D
 		rest.WithDelay(DiscordPacing),
 	)
 	if err != nil {
-		log.Printf("sendNotif: error sending discord notification: %v, %s, %s", err, title, desc)
+		d.logger.Errorf("sendNotif: error sending discord notification: %v, %s, %s", err, title, desc)
 		return err
 	}
 	return nil

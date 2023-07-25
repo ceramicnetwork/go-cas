@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"os"
 	"strconv"
 	"time"
@@ -20,9 +19,10 @@ type BatchingService struct {
 	batchPublisher models.QueuePublisher
 	batcher        *batch.Executor[*models.AnchorRequestMessage, *uuid.UUID]
 	metricService  models.MetricService
+	logger         models.Logger
 }
 
-func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
+func NewBatchingService(ctx context.Context, logger models.Logger, batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -35,7 +35,7 @@ func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublishe
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-	batchingService := BatchingService{batchPublisher: batchPublisher, metricService: metricService}
+	batchingService := BatchingService{batchPublisher: batchPublisher, metricService: metricService, logger: logger}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
 	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](
 		beOpts,
@@ -72,12 +72,12 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
 	}
 	if _, err := b.batchPublisher.SendMessage(ctx, anchorReqBatch); err != nil {
-		log.Printf("batch: failed to send message: %v, %v", anchorReqBatch, err)
+		b.logger.Errorf("batch: failed to send message: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchCreated, 1)
 	b.metricService.Distribution(ctx, models.MetricName_BatchSize, batchSize)
-	log.Printf("batch: generated batch: %v", anchorReqBatch)
+	b.logger.Infof("batch: generated batch: %v", anchorReqBatch)
 	return batchResults, nil
 }
 
