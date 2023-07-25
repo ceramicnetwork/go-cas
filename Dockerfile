@@ -1,4 +1,4 @@
-FROM golang:1.18.3-buster as builder
+FROM golang:1.20.5-buster as builder
 
 # Install deps
 RUN apt-get update && apt-get install -y \
