@@ -15,21 +15,32 @@ func TestRun(t *testing.T) {
 		monitor      *MockQueueMonitor
 		jobDb        *MockJobRepository
 		maxWorkers   int
+		amortization float64
 		inflightJobs int
 		finishedJobs int
 		newJobs      int
 	}{
 		"create as many jobs as unprocessed batches": {
-			monitor:    &MockQueueMonitor{5, 0},
-			jobDb:      &MockJobRepository{failCount: 0},
-			maxWorkers: -1,
-			newJobs:    5,
+			monitor:      &MockQueueMonitor{5, 0},
+			jobDb:        &MockJobRepository{failCount: 0},
+			maxWorkers:   -1,
+			newJobs:      5,
+			amortization: 0.5,
 		},
 		"create jobs upto configured max": {
 			monitor:    &MockQueueMonitor{3, 0},
 			jobDb:      &MockJobRepository{failCount: 0},
 			maxWorkers: 2,
 			newJobs:    2,
+		},
+		"worker amortization should create jobs over multiple iterations": {
+			monitor:      &MockQueueMonitor{5, 0},
+			jobDb:        &MockJobRepository{failCount: 0},
+			maxWorkers:   2,
+			inflightJobs: 2,
+			finishedJobs: 2,
+			newJobs:      2,
+			amortization: 0.5,
 		},
 		"do not create jobs if max already in flight": {
 			monitor:      &MockQueueMonitor{3, 0},
@@ -76,6 +87,9 @@ func TestRun(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("MAX_ANCHOR_WORKERS", strconv.FormatInt(int64(test.maxWorkers), 10))
+			if test.amortization > 0 {
+				t.Setenv("ANCHOR_WORKER_AMORTIZATION", strconv.FormatFloat(test.amortization, 'f', 2, 64))
+			}
 			metricService := &MockMetricService{}
 			workerService := NewWorkerService(logger, test.monitor, test.jobDb, metricService)
 			if test.inflightJobs > 0 {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"log"
-	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -217,20 +216,13 @@ func main() {
 			anchorBatchSize = parsedAnchorBatchSize
 		}
 	}
-	// Allocate a number of workers greater than the batch size. This prevents a small number of workers from waiting on
+	// Launch a number of workers greater than the batch size. This prevents a small number of workers from waiting on
 	// an incomplete batch to fill up because there aren't any workers available to add to the batch even when messages
 	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
 	// and processed in parallel.
 	maxBatchQueueWorkers := anchorBatchSize * 2
-	maxReceivedMessages := math.Ceil(float64(maxBatchQueueWorkers) * 1.2)
-	maxInflightRequests := math.Ceil(maxReceivedMessages / 10)
-
 	batchingService := services.NewBatchingService(serverCtx, logger, batchQueue, metricService)
-	batchingConsumer := queue.NewConsumer(logger, readyQueue, batchingService.Batch, &queue.ConsumerOpts{
-		MaxReceivedMessages: int(maxReceivedMessages),
-		MaxWorkers:          maxBatchQueueWorkers,
-		MaxInflightRequests: int(maxInflightRequests),
-	})
+	batchingConsumer := queue.NewConsumer(logger, readyQueue, batchingService.Batch, &maxBatchQueueWorkers)
 
 	// The Validation service reads from the Validate queue and posts to the Ready and Status queues
 	validationService := services.NewValidationService(logger, stateDb, readyQueue, statusQueue, metricService)

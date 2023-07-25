@@ -53,10 +53,9 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 		return err
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchIngressRequest, 1)
-	if batchId, err := b.batcher.Submit(ctx, anchorReq); err != nil {
+	if _, err := b.batcher.Submit(ctx, anchorReq); err != nil {
 		return err
 	} else {
-		b.logger.Infof("batch: processed request %s in batch %s", anchorReq.Id, batchId)
 		return nil
 	}
 }
