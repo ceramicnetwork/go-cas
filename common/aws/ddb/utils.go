@@ -17,7 +17,7 @@ const tableCreationRetries = 3
 const tableCreationWait = 3 * time.Second
 
 func createTable(ctx context.Context, logger models.Logger, client *dynamodb.Client, createTableIn *dynamodb.CreateTableInput) error {
-	if exists, err := tableExists(ctx, client, *createTableIn.TableName, logger); !exists {
+	if exists, err := tableExists(ctx, logger, client, *createTableIn.TableName); !exists {
 		httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 		defer httpCancel()
 
@@ -25,7 +25,7 @@ func createTable(ctx context.Context, logger models.Logger, client *dynamodb.Cli
 			return err
 		}
 		for i := 0; i < tableCreationRetries; i++ {
-			if exists, err = tableExists(ctx, client, *createTableIn.TableName, logger); exists {
+			if exists, err = tableExists(ctx, logger, client, *createTableIn.TableName); exists {
 				return nil
 			}
 			time.Sleep(tableCreationWait)
@@ -35,7 +35,7 @@ func createTable(ctx context.Context, logger models.Logger, client *dynamodb.Cli
 	return nil
 }
 
-func tableExists(ctx context.Context, client *dynamodb.Client, table string, logger models.Logger) (bool, error) {
+func tableExists(ctx context.Context, logger models.Logger, client *dynamodb.Client, table string) (bool, error) {
 	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer httpCancel()
 
