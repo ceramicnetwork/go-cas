@@ -62,7 +62,7 @@ func main() {
 		logger.Fatalf("error creating discord handler: %v", err)
 	}
 
-	metricService, err := metrics.NewMetricService(serverCtx, logger)
+	metricService, err := metrics.NewMetricService(serverCtx, logger, models.MetricsCallerName)
 	if err != nil {
 		logger.Fatalf("error creating metric service: %v", err)
 	}
