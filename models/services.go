@@ -8,7 +8,7 @@ import (
 )
 
 type AnchorRepository interface {
-	GetRequests(ctx context.Context, status RequestStatus, since time.Time, limit int) ([]*AnchorRequest, error)
+	GetRequests(ctx context.Context, status RequestStatus, newerThan time.Time, olderThan time.Time, limit int) ([]*AnchorRequest, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status RequestStatus, allowedSourceStatuses []RequestStatus) error
 }
 
@@ -45,10 +45,11 @@ type MetricService interface {
 }
 
 type Logger interface {
+	Debugf(template string, args ...interface{})
+	Debugw(msg string, args ...interface{})
+	Errorf(template string, args ...interface{})
+	Fatalf(template string, args ...interface{})
 	Infof(template string, args ...interface{})
 	Infoln(args ...interface{})
-	Fatalf(template string, args ...interface{})
-	Debugf(template string, args ...interface{})
-	Errorf(template string, args ...interface{})
 	Sync() error
 }

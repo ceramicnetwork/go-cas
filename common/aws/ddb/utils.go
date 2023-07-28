@@ -40,7 +40,7 @@ func tableExists(ctx context.Context, logger models.Logger, client *dynamodb.Cli
 	defer httpCancel()
 
 	if output, err := client.DescribeTable(httpCtx, &dynamodb.DescribeTableInput{TableName: aws.String(table)}); err != nil {
-		logger.Infof("dynamodb: table does not exist: %v", table)
+		logger.Infof("table does not exist: %v", table)
 		return false, err
 	} else {
 		return output.Table.TableStatus == types.TableStatusActive, nil

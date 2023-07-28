@@ -23,22 +23,18 @@ func NewLogger() models.Logger {
 		}
 	}
 
-	var cfg zap.Config = zap.NewProductionConfig()
+	cfg := zap.NewProductionConfig()
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	cfg.Level = level
 	cfg.EncoderConfig.TimeKey = "timestamp"
 	baseLogger := zap.Must(cfg.Build())
-	logger := baseLogger.Sugar()
-
-	return logger
+	return baseLogger.Sugar()
 }
 
 func NewTestLogger() models.Logger {
-	var cfg zap.Config = zap.NewDevelopmentConfig()
+	cfg := zap.NewDevelopmentConfig()
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	cfg.EncoderConfig.TimeKey = "timestamp"
 	baseLogger := zap.Must(cfg.Build())
-	logger := baseLogger.Sugar()
-
-	return logger
+	return baseLogger.Sugar()
 }

@@ -8,12 +8,6 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const ErrorTitle = "CAS Scheduler Error"
-
-const (
-	ErrorMessageFmt_DLQ string = "%s message found in dead-letter queue: [%s]"
-)
-
 type FailureHandlingService struct {
 	notif         models.Notifier
 	metricService models.MetricService
@@ -42,5 +36,5 @@ func (f FailureHandlingService) DLQ(ctx context.Context, msgBody string) error {
 			msgType = "Batch request"
 		}
 	}
-	return f.notif.SendAlert(ErrorTitle, fmt.Sprintf(ErrorMessageFmt_DLQ, msgType, msgBody))
+	return f.notif.SendAlert(models.ErrorTitle, fmt.Sprintf(models.ErrorMessageFmt_DLQ, msgType, msgBody))
 }

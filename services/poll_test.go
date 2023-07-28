@@ -41,8 +41,10 @@ func TestPoller(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			anchorRepo := &MockAnchorRepository{}
 			stateRepo := &MockStateRepository{checkpoint: originalCheckpoint}
+			notifier := &MockNotifier{}
 
-			rp := NewRequestPoller(logger, anchorRepo, stateRepo, test.validatePublisher)
+			rp := NewRequestPoller(logger, anchorRepo, stateRepo, test.validatePublisher, notifier)
+			rp.tick = time.Second
 
 			// T0 request poller starts
 			ctx, cancel := context.WithCancel(context.Background())

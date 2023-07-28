@@ -57,16 +57,16 @@ func NewWorkerService(logger models.Logger, batchMonitor models.QueueMonitor, jo
 }
 
 func (w WorkerService) Run(ctx context.Context) {
-	w.logger.Infof("worker: started")
+	w.logger.Infof("started")
 	tick := time.NewTicker(w.monitorTick)
 	for {
 		select {
 		case <-ctx.Done():
-			w.logger.Infof("worker: stopped")
+			w.logger.Infof("stopped")
 			return
 		case <-tick.C:
 			if err := w.createJobs(ctx); err != nil {
-				w.logger.Errorf("worker: failed to create jobs: %v", err)
+				w.logger.Errorf("failed to create jobs: %v", err)
 			}
 		}
 	}
@@ -94,7 +94,16 @@ func (w WorkerService) createJobs(ctx context.Context) error {
 				w.anchorJobs[jobId] = nil
 			}
 		}
-		w.logger.Debugf("worker: numJobsRequired=%d, numExistingJobs=%v, numJobsAllowed=%v, amortizedNumJobsAllowed=%f, numJobsToCreate=%d, numJobsCreated=%d, anchorJobs=%v", numJobsRequired, numExistingJobs, numJobsAllowed, amortizedNumJobsAllowed, numJobsToCreate, numJobsCreated, w.anchorJobs)
+		w.logger.Debugw(
+			"counts",
+			"numJobsRequired", numJobsRequired,
+			"numExistingJobs", numExistingJobs,
+			"numJobsAllowed", numJobsAllowed,
+			"amortizedNumJobsAllowed", amortizedNumJobsAllowed,
+			"numJobsToCreate", numJobsToCreate,
+			"numJobsCreated", numJobsCreated,
+			"anchorJobs", w.anchorJobs,
+		)
 		w.metricService.Count(ctx, models.MetricName_WorkerJobCreated, numJobsCreated)
 		return err
 	}
