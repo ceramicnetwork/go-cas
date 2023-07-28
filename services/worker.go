@@ -95,7 +95,7 @@ func (w WorkerService) createJobs(ctx context.Context) error {
 			}
 		}
 		w.logger.Debugw(
-			"counts",
+			"job counts",
 			"numJobsRequired", numJobsRequired,
 			"numExistingJobs", numExistingJobs,
 			"numJobsAllowed", numJobsAllowed,

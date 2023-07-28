@@ -39,7 +39,7 @@ func NewAnchorDb(logger models.Logger) *AnchorDatabase {
 }
 
 func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, newerThan time.Time, olderThan time.Time, limit int) ([]*models.AnchorRequest, error) {
-	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 AND created_at < $3 ORDER BY REQ.created_at LIMIT $4"
+	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 AND REQ.created_at < $3 ORDER BY REQ.created_at LIMIT $4"
 	return adb.query(
 		ctx,
 		query,

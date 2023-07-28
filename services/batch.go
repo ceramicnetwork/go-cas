@@ -77,7 +77,10 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchCreated, 1)
 	b.metricService.Distribution(ctx, models.MetricName_BatchSize, batchSize)
-	b.logger.Infof("generated %v", anchorReqBatch)
+	b.logger.Debugw(
+		"batch generated",
+		"batch", anchorReqBatch,
+	)
 	return batchResults, nil
 }
 

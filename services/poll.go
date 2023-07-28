@@ -96,7 +96,11 @@ func (p RequestPoller) Run(ctx context.Context) {
 				// It's possible the checkpoint was updated even if a particular request in the batch failed to be
 				// queued.
 				if nextCheckpoint := p.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(startCheckpoint) {
-					p.logger.Debugf("old=%s, new=%s", startCheckpoint, nextCheckpoint)
+					p.logger.Debugw(
+						"checkpoints",
+						"start", startCheckpoint,
+						"next", nextCheckpoint,
+					)
 					if _, err = p.stateDb.UpdateCheckpoint(ctx, models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
 						p.logger.Errorf("error updating checkpoint %s: %v", nextCheckpoint, err)
 					} else {
