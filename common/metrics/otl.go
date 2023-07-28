@@ -61,14 +61,14 @@ func NewMetricService(ctx context.Context, logger models.Logger) (models.MetricS
 	)
 
 	meter := meterProvider.Meter("go-cas")
-	logger.Infof("metrics: started")
+	logger.Infof("started")
 
 	return &OtlMetricService{meter: meter, meterProvider: meterProvider, logger: logger}, nil
 }
 
 func (o OtlMetricService) Shutdown(ctx context.Context) {
 	o.meterProvider.Shutdown(ctx)
-	o.logger.Infof("metrics: stopped")
+	o.logger.Infof("stopped")
 }
 
 func (o OtlMetricService) Count(ctx context.Context, name models.MetricName, val int) error {

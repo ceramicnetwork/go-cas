@@ -38,9 +38,16 @@ func NewAnchorDb(logger models.Logger) *AnchorDatabase {
 	}, logger}
 }
 
-func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, since time.Time, limit int) ([]*models.AnchorRequest, error) {
-	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 ORDER BY REQ.created_at LIMIT $3"
-	return adb.query(ctx, query, status, since.Format(common.DbDateFormat), limit)
+func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, newerThan time.Time, olderThan time.Time, limit int) ([]*models.AnchorRequest, error) {
+	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 AND created_at < $3 ORDER BY REQ.created_at LIMIT $4"
+	return adb.query(
+		ctx,
+		query,
+		status,
+		newerThan.Format(common.DbDateFormat),
+		olderThan.Format(common.DbDateFormat),
+		limit,
+	)
 }
 
 func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) ([]*models.AnchorRequest, error) {
@@ -57,14 +64,14 @@ func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (
 	)
 	conn, err := pgx.Connect(dbCtx, connUrl)
 	if err != nil {
-		adb.logger.Errorf("query: error connecting to db: %v", err)
+		adb.logger.Errorf("error connecting to db: %v", err)
 		return nil, err
 	}
 	defer conn.Close(dbCtx)
 
 	rows, err := conn.Query(dbCtx, sql, args...)
 	if err != nil {
-		adb.logger.Errorf("query: error querying db: %v", err)
+		adb.logger.Errorf("error querying db: %v", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -82,7 +89,7 @@ func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (
 			&anchorReq.Metadata,
 		)
 		if err != nil {
-			adb.logger.Errorf("query: error scanning db row: %v", err)
+			adb.logger.Errorf("error scanning db row: %v", err)
 			return nil, err
 		}
 		anchorRequests = append(anchorRequests, anchorReq)
@@ -104,7 +111,7 @@ func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 	)
 	conn, err := pgx.Connect(dbCtx, connUrl)
 	if err != nil {
-		adb.logger.Errorf("update: error connecting to db: %v", err)
+		adb.logger.Errorf("error connecting to db: %v", err)
 		return err
 	}
 	defer conn.Close(dbCtx)
@@ -125,7 +132,7 @@ func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, statu
 		id,
 	)
 	if err != nil {
-		adb.logger.Errorf("update: error updating db: %v", err)
+		adb.logger.Errorf("error updating db: %v", err)
 		return err
 	}
 	return nil

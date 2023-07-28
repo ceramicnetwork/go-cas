@@ -41,11 +41,11 @@ func NewStateDb(ctx context.Context, logger models.Logger, client *dynamodb.Clie
 		logger,
 	}
 	if err := sdb.createCheckpointTable(ctx); err != nil {
-		sdb.logger.Fatalf("state: checkpoint table creation failed: %v", err)
+		sdb.logger.Fatalf("checkpoint table creation failed: %v", err)
 	} else if err = sdb.createStreamTable(ctx); err != nil {
-		sdb.logger.Fatalf("state: stream table creation failed: %v", err)
+		sdb.logger.Fatalf("stream table creation failed: %v", err)
 	} else if err = sdb.createTipTable(ctx); err != nil {
-		sdb.logger.Fatalf("state: tip table creation failed: %v", err)
+		sdb.logger.Fatalf("tip table creation failed: %v", err)
 	}
 	return &sdb
 }
@@ -186,10 +186,10 @@ func (sdb *StateDatabase) UpdateCheckpoint(ctx context.Context, checkpointType m
 		var condUpdErr *types.ConditionalCheckFailedException
 		if errors.As(err, &condUpdErr) {
 			// Not an error, just indicate that we couldn't update the entry
-			sdb.logger.Errorf("updateCheckpoint: could not update checkpoint: %s, %v", checkpointStr, err)
+			sdb.logger.Errorf("could not update checkpoint: %s, %v", checkpointStr, err)
 			return false, nil
 		}
-		sdb.logger.Errorf("updateCheckpoint: error writing to db: %v", err)
+		sdb.logger.Errorf("error writing to db: %v", err)
 		return false, err
 	}
 	return true, nil
@@ -217,7 +217,7 @@ func (sdb *StateDatabase) StoreCid(ctx context.Context, streamCid *models.Stream
 				// Not an error, just indicate that we couldn't write the entry
 				return false, nil
 			}
-			sdb.logger.Errorf("storeCid: error writing to db: %v", err)
+			sdb.logger.Errorf("error writing to db: %v", err)
 			return false, err
 		}
 		return true, nil
@@ -254,7 +254,7 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 				// Not an error, just indicate that we couldn't write the entry.
 				return false, nil, nil
 			}
-			sdb.logger.Errorf("updateTip: error writing to db: %v", err)
+			sdb.logger.Errorf("error writing to db: %v", err)
 			return false, nil, err
 		} else if len(putItemOut.Attributes) > 0 {
 			oldTip := new(models.StreamTip)
@@ -267,7 +267,7 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 						N: tsDecode,
 					}
 				}); err != nil {
-				sdb.logger.Errorf("updateTip: error unmarshaling old tip: %v", err)
+				sdb.logger.Errorf("error unmarshaling old tip: %v", err)
 				// We've written the new tip and lost the previous tip here. This means that we won't be able to mark
 				// the old tip REPLACED. As a result, the old tip will get anchored along with the new tip, causing the
 				// new tip to be rejected in Ceramic via conflict resolution. While not ideal, this is no worse than

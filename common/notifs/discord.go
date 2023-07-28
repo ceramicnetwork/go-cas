@@ -89,7 +89,7 @@ func (d DiscordHandler) sendNotif(wh webhook.Client, title, desc string, color D
 		rest.WithDelay(DiscordPacing),
 	)
 	if err != nil {
-		d.logger.Errorf("sendNotif: error sending discord notification: %v, %s, %s", err, title, desc)
+		d.logger.Errorf("error sending discord notification: %v, %s, %s", err, title, desc)
 		return err
 	}
 	return nil

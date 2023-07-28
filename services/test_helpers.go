@@ -25,12 +25,12 @@ type statusUpdate struct {
 	allowedSourceStatuses []models.RequestStatus
 }
 
-func (m *MockAnchorRepository) GetRequests(_ context.Context, _ models.RequestStatus, since time.Time, _ int) ([]*models.AnchorRequest, error) {
-	m.receivedCheckpoints = append(m.receivedCheckpoints, since)
+func (m *MockAnchorRepository) GetRequests(_ context.Context, _ models.RequestStatus, newerThan time.Time, _ time.Time, _ int) ([]*models.AnchorRequest, error) {
+	m.receivedCheckpoints = append(m.receivedCheckpoints, newerThan)
 
 	return []*models.AnchorRequest{
-		{CreatedAt: since.Add(time.Minute * 1)},
-		{CreatedAt: since.Add(time.Minute * 2)},
+		{CreatedAt: newerThan.Add(time.Minute * 1)},
+		{CreatedAt: newerThan.Add(time.Minute * 2)},
 	}, nil
 }
 
@@ -232,3 +232,7 @@ func Assert(t *testing.T, expected any, received any, message string) {
 		}
 	}
 }
+
+type MockNotifier struct{}
+
+func (n MockNotifier) SendAlert(string, string) error { return nil }

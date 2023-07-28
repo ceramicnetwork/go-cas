@@ -45,7 +45,7 @@ func main() {
 
 	awsCfg, err := config.AwsConfig(serverCtx)
 	if err != nil {
-		logger.Fatalf("main: error creating aws cfg: %v", err)
+		logger.Fatalf("error creating aws cfg: %v", err)
 	}
 
 	anchorDb := db.NewAnchorDb(logger)
@@ -59,12 +59,12 @@ func main() {
 
 	discordHandler, err := notifs.NewDiscordHandler(logger)
 	if err != nil {
-		logger.Fatalf("main: failed to create discord handler: %v", err)
+		logger.Fatalf("failed to create discord handler: %v", err)
 	}
 
 	metricService, err := metrics.NewMetricService(serverCtx, logger)
 	if err != nil {
-		logger.Fatalf("main: failed to create metric service: %v", err)
+		logger.Fatalf("failed to create metric service: %v", err)
 	}
 
 	// Queue publishers
@@ -81,11 +81,11 @@ func main() {
 		queue.PublisherOpts{QueueType: queue.QueueType_DLQ, VisibilityTimeout: visibilityTimeout},
 	)
 	if err != nil {
-		logger.Fatalf("main: failed to create dead-letter queue: %v", err)
+		logger.Fatalf("failed to create dead-letter queue: %v", err)
 	}
 	dlqArn, err := queue.GetQueueArn(serverCtx, deadLetterQueue.GetUrl(), sqsClient)
 	if err != nil {
-		logger.Fatalf("main: failed to fetch dead-letter queue arn: %v", err)
+		logger.Fatalf("failed to fetch dead-letter queue arn: %v", err)
 	}
 	redrivePolicy := &queue.QueueRedrivePolicy{
 		DeadLetterTargetArn: dlqArn,
@@ -104,7 +104,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("main: failed to create failure queue: %v", err)
+		logger.Fatalf("failed to create failure queue: %v", err)
 	}
 	// Validate queue
 	validateQueue, err := queue.NewPublisher(
@@ -117,50 +117,53 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("main: failed to create validate queue: %v", err)
+		logger.Fatalf("failed to create validate queue: %v", err)
 	}
-	// Ready queue
+	// The Ready and Batch queues will need larger visibility timeouts than the other queues. Requests pulled from the
+	// Ready queue will remain in flight for the batch linger duration. Batches from the Batch queue will remain in
+	// flight as long as it takes for them to get anchored.
+	// These queues will thus allow a smaller maximum receive count before messages fall through to the DLQ. Detecting
+	// failures is harder given the longer visibility timeouts, so it's important that they be detected as soon as
+	// possible.
+	longQueueVisibilityTimeout := visibilityTimeout
+	if configVisibilityTimeout, found := os.LookupEnv("LONG_QUEUE_VISIBILITY_TIMEOUT"); found {
+		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
+			longQueueVisibilityTimeout = &parsedVisibilityTimeout
+		}
+	}
+	longQueueMaxReceiveCount := redrivePolicy.MaxReceiveCount
+	if configMaxReceiveCount, found := os.LookupEnv("LONG_QUEUE_MAX_RECEIVE_COUNT"); found {
+		if parsedMaxReceiveCount, err := strconv.Atoi(configMaxReceiveCount); err == nil {
+			longQueueMaxReceiveCount = parsedMaxReceiveCount
+		}
+	}
+	longQueueRedrivePolicy := &queue.QueueRedrivePolicy{
+		DeadLetterTargetArn: dlqArn,
+		MaxReceiveCount:     longQueueMaxReceiveCount,
+	}
 	readyQueue, err := queue.NewPublisher(
 		serverCtx,
 		sqsClient,
 		queue.PublisherOpts{
 			QueueType:         queue.QueueType_Ready,
-			VisibilityTimeout: visibilityTimeout,
-			RedrivePolicy:     redrivePolicy,
+			VisibilityTimeout: longQueueVisibilityTimeout,
+			RedrivePolicy:     longQueueRedrivePolicy,
 		},
 	)
 	if err != nil {
-		logger.Fatalf("main: failed to create ready queue: %v", err)
-	}
-	// The Batch queue will generally have a larger visibility timeout given the usually long batch linger times. It
-	// will also allow a smaller maximum receive count before messages fall through to the DLQ. Detecting failures is
-	// harder given the longer visibility timeout, so it's important that they be detected as soon as possible.
-	batchVisibilityTimeout := visibilityTimeout
-	if configVisibilityTimeout, found := os.LookupEnv("BATCH_QUEUE_VISIBILITY_TIMEOUT"); found {
-		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
-			batchVisibilityTimeout = &parsedVisibilityTimeout
-		}
-	}
-	batchMaxReceiveCount := redrivePolicy.MaxReceiveCount
-	if configMaxReceiveCount, found := os.LookupEnv("BATCH_QUEUE_MAX_RECEIVE_COUNT"); found {
-		if parsedMaxReceiveCount, err := strconv.Atoi(configMaxReceiveCount); err == nil {
-			batchMaxReceiveCount = parsedMaxReceiveCount
-		}
+		logger.Fatalf("failed to create ready queue: %v", err)
 	}
 	batchQueue, err := queue.NewPublisher(
 		serverCtx,
 		sqsClient,
 		queue.PublisherOpts{
 			QueueType:         queue.QueueType_Batch,
-			VisibilityTimeout: batchVisibilityTimeout,
-			RedrivePolicy: &queue.QueueRedrivePolicy{
-				DeadLetterTargetArn: dlqArn,
-				MaxReceiveCount:     batchMaxReceiveCount,
-			},
+			VisibilityTimeout: longQueueVisibilityTimeout,
+			RedrivePolicy:     longQueueRedrivePolicy,
 		},
 	)
 	if err != nil {
-		logger.Fatalf("main: failed to create batch queue: %v", err)
+		logger.Fatalf("failed to create batch queue: %v", err)
 	}
 	// Status queue
 	statusQueue, err := queue.NewPublisher(
@@ -173,28 +176,28 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("main: failed to create status queue: %v", err)
+		logger.Fatalf("failed to create status queue: %v", err)
 	}
 
 	// Create utilization gauges for all the queues
 	if err = metricService.QueueGauge(serverCtx, deadLetterQueue.GetName(), queue.NewMonitor(deadLetterQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("main: failed to create utilization gauge for dead-letter queue: %v", err)
+		logger.Fatalf("failed to create utilization gauge for dead-letter queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, failureQueue.GetName(), queue.NewMonitor(failureQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("main: failed to create utilization gauge for failure queue: %v", err)
+		logger.Fatalf("failed to create utilization gauge for failure queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, validateQueue.GetName(), queue.NewMonitor(validateQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("main: failed to create utilization gauge for validate queue: %v", err)
+		logger.Fatalf("failed to create utilization gauge for validate queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, readyQueue.GetName(), queue.NewMonitor(readyQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("main: failed to create utilization gauge for ready queue: %v", err)
+		logger.Fatalf("failed to create utilization gauge for ready queue: %v", err)
 	}
 	batchMonitor := queue.NewMonitor(batchQueue.GetUrl(), sqsClient)
 	if err = metricService.QueueGauge(serverCtx, batchQueue.GetName(), batchMonitor); err != nil {
-		logger.Fatalf("main: failed to create utilization gauge for batch queue: %v", err)
+		logger.Fatalf("failed to create utilization gauge for batch queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, statusQueue.GetName(), queue.NewMonitor(statusQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("main: failed to create utilization gauge for status queue: %v", err)
+		logger.Fatalf("failed to create utilization gauge for status queue: %v", err)
 	}
 
 	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load and
@@ -229,7 +232,7 @@ func main() {
 	validationConsumer := queue.NewConsumer(logger, validateQueue, validationService.Validate, nil)
 
 	wg := sync.WaitGroup{}
-	wg.Add(2)
+	wg.Add(3)
 
 	// Set up graceful shutdown
 	go func() {
@@ -238,7 +241,7 @@ func main() {
 		interruptCh := make(chan os.Signal, 1)
 		signal.Notify(interruptCh, syscall.SIGTERM)
 		<-interruptCh
-		logger.Infoln("main: shutdown started")
+		logger.Infoln("shutdown started")
 
 		// Shut down services in the order in which data goes through the pipeline:
 		//  - validation
@@ -278,7 +281,7 @@ func main() {
 		// Cancel the server context
 		serverCtxCancel()
 
-		logger.Infoln("main: shutdown complete")
+		logger.Infoln("shutdown complete")
 	}()
 
 	// Start pipeline components in the opposite order in which data goes through
@@ -293,6 +296,12 @@ func main() {
 	statusConsumer.Start()
 	batchingConsumer.Start()
 	validationConsumer.Start()
+
+	go func() {
+		defer wg.Done()
+		// Poll for requests that haven't been processed in time
+		services.NewRequestPoller(logger, anchorDb, stateDb, validateQueue, discordHandler).Run(serverCtx)
+	}()
 
 	wg.Wait()
 }
