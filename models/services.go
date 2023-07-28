@@ -34,7 +34,7 @@ type QueueMonitor interface {
 }
 
 type Notifier interface {
-	SendAlert(title, desc string) error
+	SendAlert(title, desc, content string) error
 }
 
 type MetricService interface {

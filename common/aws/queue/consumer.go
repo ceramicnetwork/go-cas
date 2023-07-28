@@ -32,19 +32,16 @@ func NewConsumer(logger models.Logger, publisher *Publisher, callback gosqs.Mess
 }
 
 func (c Consumer) Start() {
-	c.logger.Infof("%s: consumer starting...", c.queueType)
 	c.consumer.Start()
-	c.logger.Infof("%s: consumer started", c.queueType)
+	c.logger.Infof("%s: started", c.queueType)
 }
 
 func (c Consumer) Shutdown() {
-	c.logger.Infof("%s: consumer stopping...", c.queueType)
 	c.consumer.Shutdown()
-	c.logger.Infof("%s: consumer stopped", c.queueType)
+	c.logger.Infof("%s: stopped", c.queueType)
 }
 
 func (c Consumer) WaitForRxShutdown() {
-	c.logger.Infof("%s: consumer rx stopping...", c.queueType)
 	c.consumer.WaitForRxShutdown()
-	c.logger.Infof("%s: consumer rx stopped", c.queueType)
+	c.logger.Infof("%s: rx stopped", c.queueType)
 }

@@ -235,4 +235,4 @@ func Assert(t *testing.T, expected any, received any, message string) {
 
 type MockNotifier struct{}
 
-func (n MockNotifier) SendAlert(string, string) error { return nil }
+func (n MockNotifier) SendAlert(string, string, string) error { return nil }

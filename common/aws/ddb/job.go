@@ -29,7 +29,7 @@ func NewJobDb(ctx context.Context, logger models.Logger, ddbClient *dynamodb.Cli
 	jobTable := "ceramic-" + os.Getenv(cas.Env_Env) + "-ops"
 	jdb := JobDatabase{ddbClient, jobTable, logger}
 	if err := jdb.createJobTable(ctx); err != nil {
-		jdb.logger.Fatalf("table creation failed: %v", err)
+		jdb.logger.Fatalf("error creating table: %v", err)
 	}
 	return &jdb
 }

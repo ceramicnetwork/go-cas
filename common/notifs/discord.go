@@ -63,24 +63,29 @@ func parseDiscordWebhookUrl(urlEnv string) (webhook.Client, error) {
 	return nil, nil
 }
 
-func (d DiscordHandler) SendAlert(title, desc string) error {
+func (d DiscordHandler) SendAlert(title, desc, content string) error {
 	if d.alertWebhook != nil {
-		return d.sendNotif(d.alertWebhook, title, desc, DiscordColor_Alert)
+		return d.sendNotif(d.alertWebhook, title, desc, content, DiscordColor_Alert)
 	}
 	// Always duplicate notifications to the test channel, if configured.
 	if d.testWebhook != nil {
-		return d.sendNotif(d.testWebhook, title, desc, DiscordColor_Alert)
+		return d.sendNotif(d.testWebhook, title, desc, content, DiscordColor_Alert)
 	}
 	return nil
 }
 
 // TODO: Need to make the output more readable for specific errors
-func (d DiscordHandler) sendNotif(wh webhook.Client, title, desc string, color DiscordColor) error {
+func (d DiscordHandler) sendNotif(wh webhook.Client, title, desc, content string, color DiscordColor) error {
 	messageEmbed := discord.Embed{
-		Title:       title,
-		Description: desc,
-		Type:        discord.EmbedTypeRich,
-		Color:       int(color),
+		Title: title,
+		Fields: []discord.EmbedField{
+			{
+				Name:  desc,
+				Value: content,
+			},
+		},
+		Type:  discord.EmbedTypeRich,
+		Color: int(color),
 	}
 	_, err := wh.CreateMessage(discord.NewWebhookMessageCreateBuilder().
 		SetEmbeds(messageEmbed).

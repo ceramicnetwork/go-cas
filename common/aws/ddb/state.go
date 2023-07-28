@@ -41,11 +41,11 @@ func NewStateDb(ctx context.Context, logger models.Logger, client *dynamodb.Clie
 		logger,
 	}
 	if err := sdb.createCheckpointTable(ctx); err != nil {
-		sdb.logger.Fatalf("checkpoint table creation failed: %v", err)
+		sdb.logger.Fatalf("error creating checkpoint table: %v", err)
 	} else if err = sdb.createStreamTable(ctx); err != nil {
-		sdb.logger.Fatalf("stream table creation failed: %v", err)
+		sdb.logger.Fatalf("error creating stream table: %v", err)
 	} else if err = sdb.createTipTable(ctx); err != nil {
-		sdb.logger.Fatalf("tip table creation failed: %v", err)
+		sdb.logger.Fatalf("error creating tip table: %v", err)
 	}
 	return &sdb
 }
@@ -186,7 +186,7 @@ func (sdb *StateDatabase) UpdateCheckpoint(ctx context.Context, checkpointType m
 		var condUpdErr *types.ConditionalCheckFailedException
 		if errors.As(err, &condUpdErr) {
 			// Not an error, just indicate that we couldn't update the entry
-			sdb.logger.Errorf("could not update checkpoint: %s, %v", checkpointStr, err)
+			sdb.logger.Errorf("error updating checkpoint: %s, %v", checkpointStr, err)
 			return false, nil
 		}
 		sdb.logger.Errorf("error writing to db: %v", err)

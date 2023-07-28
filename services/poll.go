@@ -75,8 +75,9 @@ func (p RequestPoller) Run(ctx context.Context) {
 				p.logger.Debugf("found %d requests newer than %s", len(anchorReqs), startCheckpoint)
 				// Send an alert because we shouldn't have found any old unprocessed requests
 				err = p.notif.SendAlert(
-					models.ErrorTitle,
-					fmt.Sprintf(models.ErrorMessageFmt_Unprocessed, startCheckpoint, endCheckpoint),
+					models.AlertTitle,
+					models.AlertDesc_Unprocessed,
+					fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint, endCheckpoint),
 				)
 				if err != nil {
 					p.logger.Errorf("error sending alert: %v", err)
@@ -96,11 +97,7 @@ func (p RequestPoller) Run(ctx context.Context) {
 				// It's possible the checkpoint was updated even if a particular request in the batch failed to be
 				// queued.
 				if nextCheckpoint := p.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(startCheckpoint) {
-					p.logger.Debugw(
-						"checkpoints",
-						"start", startCheckpoint,
-						"next", nextCheckpoint,
-					)
+					p.logger.Debugf("checkpoints: start=%s, next=%s", startCheckpoint, nextCheckpoint)
 					if _, err = p.stateDb.UpdateCheckpoint(ctx, models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
 						p.logger.Errorf("error updating checkpoint %s: %v", nextCheckpoint, err)
 					} else {
@@ -120,7 +117,7 @@ func (p RequestPoller) sendRequestMessages(ctx context.Context, anchorReqs []*mo
 	processedCheckpoint := anchorReqs[0].CreatedAt.Add(-time.Millisecond)
 	for _, anchorReq := range anchorReqs {
 		if _, err := p.validatePublisher.SendMessage(ctx, anchorReq); err != nil {
-			p.logger.Errorf("failed to send message: %v, %v", anchorReq, err)
+			p.logger.Errorf("error sending message: %v, %v", anchorReq, err)
 			break
 		}
 		processedCheckpoint = anchorReq.CreatedAt

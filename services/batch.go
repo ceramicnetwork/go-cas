@@ -72,7 +72,7 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
 	}
 	if _, err := b.batchPublisher.SendMessage(ctx, anchorReqBatch); err != nil {
-		b.logger.Errorf("failed to send message: %v, %v", anchorReqBatch, err)
+		b.logger.Errorf("error sending message: %v, %v", anchorReqBatch, err)
 		return nil, err
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchCreated, 1)

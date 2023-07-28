@@ -66,7 +66,7 @@ func (w WorkerService) Run(ctx context.Context) {
 			return
 		case <-tick.C:
 			if err := w.createJobs(ctx); err != nil {
-				w.logger.Errorf("failed to create jobs: %v", err)
+				w.logger.Errorf("error creating jobs: %v", err)
 			}
 		}
 	}

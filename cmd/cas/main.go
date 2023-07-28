@@ -59,12 +59,12 @@ func main() {
 
 	discordHandler, err := notifs.NewDiscordHandler(logger)
 	if err != nil {
-		logger.Fatalf("failed to create discord handler: %v", err)
+		logger.Fatalf("error creating discord handler: %v", err)
 	}
 
 	metricService, err := metrics.NewMetricService(serverCtx, logger)
 	if err != nil {
-		logger.Fatalf("failed to create metric service: %v", err)
+		logger.Fatalf("error creating metric service: %v", err)
 	}
 
 	// Queue publishers
@@ -81,11 +81,11 @@ func main() {
 		queue.PublisherOpts{QueueType: queue.QueueType_DLQ, VisibilityTimeout: visibilityTimeout},
 	)
 	if err != nil {
-		logger.Fatalf("failed to create dead-letter queue: %v", err)
+		logger.Fatalf("error creating dead-letter queue: %v", err)
 	}
 	dlqArn, err := queue.GetQueueArn(serverCtx, deadLetterQueue.GetUrl(), sqsClient)
 	if err != nil {
-		logger.Fatalf("failed to fetch dead-letter queue arn: %v", err)
+		logger.Fatalf("error fetching dead-letter queue arn: %v", err)
 	}
 	redrivePolicy := &queue.QueueRedrivePolicy{
 		DeadLetterTargetArn: dlqArn,
@@ -104,7 +104,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("failed to create failure queue: %v", err)
+		logger.Fatalf("error creating failure queue: %v", err)
 	}
 	// Validate queue
 	validateQueue, err := queue.NewPublisher(
@@ -117,7 +117,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("failed to create validate queue: %v", err)
+		logger.Fatalf("error creating validate queue: %v", err)
 	}
 	// The Ready and Batch queues will need larger visibility timeouts than the other queues. Requests pulled from the
 	// Ready queue will remain in flight for the batch linger duration. Batches from the Batch queue will remain in
@@ -151,7 +151,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("failed to create ready queue: %v", err)
+		logger.Fatalf("error creating ready queue: %v", err)
 	}
 	batchQueue, err := queue.NewPublisher(
 		serverCtx,
@@ -163,7 +163,7 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("failed to create batch queue: %v", err)
+		logger.Fatalf("error creating batch queue: %v", err)
 	}
 	// Status queue
 	statusQueue, err := queue.NewPublisher(
@@ -176,28 +176,28 @@ func main() {
 		},
 	)
 	if err != nil {
-		logger.Fatalf("failed to create status queue: %v", err)
+		logger.Fatalf("error creating status queue: %v", err)
 	}
 
 	// Create utilization gauges for all the queues
 	if err = metricService.QueueGauge(serverCtx, deadLetterQueue.GetName(), queue.NewMonitor(deadLetterQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("failed to create utilization gauge for dead-letter queue: %v", err)
+		logger.Fatalf("error creating gauge for dead-letter queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, failureQueue.GetName(), queue.NewMonitor(failureQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("failed to create utilization gauge for failure queue: %v", err)
+		logger.Fatalf("error creating gauge for failure queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, validateQueue.GetName(), queue.NewMonitor(validateQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("failed to create utilization gauge for validate queue: %v", err)
+		logger.Fatalf("error creating gauge for validate queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, readyQueue.GetName(), queue.NewMonitor(readyQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("failed to create utilization gauge for ready queue: %v", err)
+		logger.Fatalf("error creating gauge for ready queue: %v", err)
 	}
 	batchMonitor := queue.NewMonitor(batchQueue.GetUrl(), sqsClient)
 	if err = metricService.QueueGauge(serverCtx, batchQueue.GetName(), batchMonitor); err != nil {
-		logger.Fatalf("failed to create utilization gauge for batch queue: %v", err)
+		logger.Fatalf("error creating gauge for batch queue: %v", err)
 	}
 	if err = metricService.QueueGauge(serverCtx, statusQueue.GetName(), queue.NewMonitor(statusQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("failed to create utilization gauge for status queue: %v", err)
+		logger.Fatalf("error creating gauge for status queue: %v", err)
 	}
 
 	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load and

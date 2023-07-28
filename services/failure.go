@@ -36,5 +36,10 @@ func (f FailureHandlingService) DLQ(ctx context.Context, msgBody string) error {
 			msgType = "Batch request"
 		}
 	}
-	return f.notif.SendAlert(models.ErrorTitle, fmt.Sprintf(models.ErrorMessageFmt_DLQ, msgType, msgBody))
+	text, _ := json.MarshalIndent(msgBody, "", "")
+	return f.notif.SendAlert(
+		models.AlertTitle,
+		models.AlertDesc_DeadLetterQueue,
+		fmt.Sprintf(models.AlertFmt_DeadLetterQueue, msgType, text),
+	)
 }
