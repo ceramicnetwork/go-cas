@@ -232,7 +232,7 @@ func main() {
 	validationConsumer := queue.NewConsumer(logger, validateQueue, validationService.Validate, nil)
 
 	wg := sync.WaitGroup{}
-	wg.Add(3)
+	wg.Add(2)
 
 	// Set up graceful shutdown
 	go func() {
@@ -297,11 +297,17 @@ func main() {
 	batchingConsumer.Start()
 	validationConsumer.Start()
 
-	go func() {
-		defer wg.Done()
-		// Poll for requests that haven't been processed in time
-		services.NewRequestPoller(logger, anchorDb, stateDb, validateQueue, discordHandler).Run(serverCtx)
-	}()
+	// Enable auditing of the anchor DB to check for pending anchor requests that might have been missed
+	if configAnchorAuditEnabled, found := os.LookupEnv(models.Env_AnchorAuditEnabled); found {
+		if anchorAuditEnabled, err := strconv.ParseBool(configAnchorAuditEnabled); (err == nil) && anchorAuditEnabled {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				// Poll for requests that haven't been processed in time
+				services.NewRequestPoller(logger, anchorDb, stateDb, validateQueue, discordHandler).Run(serverCtx)
+			}()
+		}
+	}
 
 	wg.Wait()
 }
