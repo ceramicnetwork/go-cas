@@ -31,7 +31,14 @@ const (
 )
 
 const (
-	AnchorOverrides_ContractAddress = "ETH_CONTRACT_ADDRESS"
+	AnchorOverrides_AppMode                = "APP_MODE"
+	AnchorOverrides_ContractAddress        = "ETH_CONTRACT_ADDRESS"
+	AnchorOverrides_SchedulerStopAfterNoOp = "SCHEDULER_STOP_AFTER_NO_OP"
+)
+
+const (
+	AnchorAppMode_Anchor             = "anchor"
+	AnchorAppMode_ContinualAnchoring = "continual-anchoring"
 )
 
 type JobState struct {
