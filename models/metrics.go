@@ -14,3 +14,5 @@ const (
 	MetricName_ValidateReprocessedRequest MetricName = "validate_reprocessed_request"
 	MetricName_WorkerJobCreated           MetricName = "worker_job_created"
 )
+
+const MetricsCallerName = "go-cas"
