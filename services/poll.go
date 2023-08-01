@@ -14,8 +14,8 @@ const dbLoadLimit = 1000
 // Only look for unprocessed requests as far back as 2 days
 const startCheckpointDelta = -48 * time.Hour
 
-// Only look for unprocessed requests older than 6 hours
-const endCheckpointDelta = -6 * time.Hour
+// Only look for unprocessed requests older than 12 hours
+const endCheckpointDelta = -12 * time.Hour
 
 type RequestPoller struct {
 	anchorDb          models.AnchorRepository
