@@ -297,13 +297,12 @@ func main() {
 	batchingConsumer.Start()
 	validationConsumer.Start()
 
-	// Enable auditing of the anchor DB to check for pending anchor requests that might have been missed
 	if configAnchorAuditEnabled, found := os.LookupEnv(models.Env_AnchorAuditEnabled); found {
 		if anchorAuditEnabled, err := strconv.ParseBool(configAnchorAuditEnabled); (err == nil) && anchorAuditEnabled {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				// Poll for requests that haven't been processed in time
+				// Enable auditing of the anchor DB to check for pending anchor requests that might have been missed
 				services.NewRequestPoller(logger, anchorDb, stateDb, validateQueue, discordHandler).Run(serverCtx)
 			}()
 		}
