@@ -179,6 +179,20 @@ func main() {
 		logger.Fatalf("error creating status queue: %v", err)
 	}
 
+	// ipfs queue
+	ipfsQueue, err := queue.NewPublisher(
+		serverCtx,
+		sqsClient,
+		queue.PublisherOpts{
+			QueueType:         queue.QueueType_IPFS,
+			VisibilityTimeout: visibilityTimeout,
+			RedrivePolicy:     redrivePolicy,
+		},
+	)
+	if err != nil {
+		logger.Fatalf("error creating ipfs queue: %v", err)
+	}
+
 	// Create utilization gauges for all the queues
 	if err = metricService.QueueGauge(serverCtx, deadLetterQueue.GetName(), queue.NewMonitor(deadLetterQueue.GetUrl(), sqsClient)); err != nil {
 		logger.Fatalf("error creating gauge for dead-letter queue: %v", err)
@@ -199,6 +213,9 @@ func main() {
 	if err = metricService.QueueGauge(serverCtx, statusQueue.GetName(), queue.NewMonitor(statusQueue.GetUrl(), sqsClient)); err != nil {
 		logger.Fatalf("error creating gauge for status queue: %v", err)
 	}
+	if err = metricService.QueueGauge(serverCtx, ipfsQueue.GetName(), queue.NewMonitor(ipfsQueue.GetUrl(), sqsClient)); err != nil {
+		logger.Fatalf("error creating gauge for ipfs queue: %v", err)
+	}
 
 	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load and
 	// also maintaining backpressure on the queues.
@@ -211,6 +228,10 @@ func main() {
 	// The Status service reads from the Status queue and updates the Anchor DB
 	statusService := services.NewStatusService(anchorDb)
 	statusConsumer := queue.NewConsumer(logger, statusQueue, statusService.Status, nil)
+
+	// The IPFS service reads from the IPFS queue and puts or publishes
+	ipfsService := services.NewIpfsService(logger, metricService)
+	ipfsConsumer := queue.NewConsumer(logger, ipfsQueue, ipfsService.Run, nil)
 
 	// The Batching service reads from the Ready queue and posts to the Batch queue
 	anchorBatchSize := models.DefaultAnchorBatchSize
@@ -272,6 +293,7 @@ func main() {
 		batchWg.Wait()
 
 		statusConsumer.Shutdown()
+		ipfsConsumer.Shutdown()
 		failureConsumer.Shutdown()
 		dlqConsumer.Shutdown()
 
@@ -294,6 +316,7 @@ func main() {
 	dlqConsumer.Start()
 	failureConsumer.Start()
 	statusConsumer.Start()
+	ipfsConsumer.Start()
 	batchingConsumer.Start()
 	validationConsumer.Start()
 

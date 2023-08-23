@@ -13,6 +13,8 @@ const (
 	MetricName_ValidateReplacedRequest    MetricName = "validate_replaced_request"
 	MetricName_ValidateReprocessedRequest MetricName = "validate_reprocessed_request"
 	MetricName_WorkerJobCreated           MetricName = "worker_job_created"
+	MetricName_IpfsError                  MetricName = "ipfs_error"
+	MetricName_IpfsUnknownTask            MetricName = "ipfs_unknown_task"
 )
 
 const MetricsCallerName = "go-cas"
