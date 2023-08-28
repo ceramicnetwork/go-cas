@@ -22,12 +22,6 @@ const DefaultIpfsBurstLimit = 16
 const DefaultIpfsLimiterMaxQueueDepth = 100
 const DefaultIpfsPublishPubsubTimeoutMs = 30
 
-type PubSubPublishArgs struct {
-	Topic     string `json:"topic"  validate:"required"`
-	Data      []byte `json:"data"  validate:"required"`
-	TimeoutMs int    `json:"timeoutMs,omitempty"`
-}
-
 type IpfsApi interface {
 	PubSub() iface.PubSubAPI
 }
@@ -74,19 +68,25 @@ func (i *IpfsWithRateLimiting) limiterRunFunction(ctx context.Context, msgBody s
 	var isKnownTask bool
 
 	// Unmarshal into one of the known ipfs tasks. Currently there is only one
-	pubsubPublishArgs := new(PubSubPublishArgs)
+	pubsubPublishArgs := new(models.IpfsPubsubPublishMessage)
 	if err := json.Unmarshal([]byte(msgBody), &pubsubPublishArgs); err == nil {
 		if err := i.validator.Struct(pubsubPublishArgs); err == nil {
 			isKnownTask = true
-			timeoutMs := DefaultIpfsPublishPubsubTimeoutMs
-			if pubsubPublishArgs.TimeoutMs != 0 {
-				timeoutMs = pubsubPublishArgs.TimeoutMs
-			}
 
-			ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(time.Millisecond*time.Duration(timeoutMs)))
-			defer cancel()
-			if err := i.api.PubSub().Publish(ctxWithTimeout, pubsubPublishArgs.Topic, pubsubPublishArgs.Data); err != nil {
-				ipfsError = fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %v", i.multiAddressStr, err)
+			now := time.Now()
+			if now.After(pubsubPublishArgs.CreatedAt.Add(time.Minute)) {
+				i.metricService.Count(ctx, models.MetricName_IpfsPubsubPublishExpired, 1)
+			} else {
+				timeoutMs := DefaultIpfsPublishPubsubTimeoutMs
+				if pubsubPublishArgs.TimeoutMs != 0 {
+					timeoutMs = pubsubPublishArgs.TimeoutMs
+				}
+
+				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(time.Millisecond*time.Duration(timeoutMs)))
+				defer cancel()
+				if err := i.api.PubSub().Publish(ctxWithTimeout, pubsubPublishArgs.Topic, pubsubPublishArgs.Data); err != nil {
+					ipfsError = fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %v", i.multiAddressStr, err)
+				}
 			}
 		}
 	}

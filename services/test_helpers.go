@@ -241,7 +241,7 @@ type MockNotifier struct{}
 func (n MockNotifier) SendAlert(string, string, string) error { return nil }
 
 type MockIpfsPubSubApi struct {
-	publishedMessages []*PubSubPublishArgs
+	publishedMessages []models.IpfsPubsubPublishMessage
 }
 
 func (i *MockIpfsPubSubApi) Ls(context.Context) ([]string, error) {
@@ -258,7 +258,7 @@ func (i *MockIpfsPubSubApi) Publish(ctx context.Context, topic string, data []by
 	case <-ctx.Done():
 		return fmt.Errorf("timed out while publishing")
 	default:
-		i.publishedMessages = append(i.publishedMessages, &PubSubPublishArgs{Topic: topic, Data: data})
+		i.publishedMessages = append(i.publishedMessages, models.IpfsPubsubPublishMessage{CreatedAt: time.Now(), Topic: topic, Data: data})
 		return nil
 	}
 }

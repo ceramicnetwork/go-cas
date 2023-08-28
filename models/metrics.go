@@ -15,6 +15,7 @@ const (
 	MetricName_WorkerJobCreated           MetricName = "worker_job_created"
 	MetricName_IpfsError                  MetricName = "ipfs_error"
 	MetricName_IpfsUnknownTask            MetricName = "ipfs_unknown_task"
+	MetricName_IpfsPubsubPublishExpired   MetricName = "ipfs_pubsub_publish_expired"
 )
 
 const MetricsCallerName = "go-cas"

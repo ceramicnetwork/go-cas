@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
@@ -14,25 +15,37 @@ import (
 
 func TestPubsub(t *testing.T) {
 	tests := map[string]struct {
-		Ctx         context.Context
-		Msg         PubSubPublishArgs
-		ShouldError bool
+		Ctx              context.Context
+		Msg              models.IpfsPubsubPublishMessage
+		ShouldError      bool
+		ShouldNotPublish bool
 	}{
 		"Can publish pubsub messages": {
 			Ctx: context.Background(),
-			Msg: PubSubPublishArgs{
-				Topic: "/go-cas/tests",
-				Data:  []byte("cats"),
+			Msg: models.IpfsPubsubPublishMessage{
+				CreatedAt: time.Now(),
+				Topic:     "/go-cas/tests",
+				Data:      []byte("cats"),
 			},
 		},
 		"Will timeout if publishing takes too long": {
 			Ctx: context.Background(),
-			Msg: PubSubPublishArgs{
+			Msg: models.IpfsPubsubPublishMessage{
+				CreatedAt: time.Now(),
 				Topic:     "/go-cas/tests",
 				Data:      []byte("cats"),
 				TimeoutMs: 1,
 			},
 			ShouldError: true,
+		},
+		"Will not publish message if task expired": {
+			Ctx: context.Background(),
+			Msg: models.IpfsPubsubPublishMessage{
+				CreatedAt: time.Now().Add(-time.Minute),
+				Topic:     "/go-cas/tests",
+				Data:      []byte("cats"),
+			},
+			ShouldNotPublish: true,
 		},
 	}
 
@@ -57,12 +70,27 @@ func TestPubsub(t *testing.T) {
 				if err != nil {
 					t.Fatalf("failed publishing msg: %v", err)
 				}
-				if len(mockIpfsApi.pubsub.publishedMessages) != 1 {
-					t.Fatalf("should have published 1 message, published %v messages", len(mockIpfsApi.pubsub.publishedMessages))
+
+				if test.ShouldNotPublish {
+					// instantiate pubsub if it has not
+					mockIpfsApi.PubSub()
+					if len(mockIpfsApi.pubsub.publishedMessages) != 0 {
+						t.Fatalf("should have published 0 message, published %v messages", len(mockIpfsApi.pubsub.publishedMessages))
+					}
+
+				} else {
+					if len(mockIpfsApi.pubsub.publishedMessages) != 1 {
+						t.Fatalf("should have published 1 message, published %v messages", len(mockIpfsApi.pubsub.publishedMessages))
+					}
+					receivedMessage := mockIpfsApi.pubsub.publishedMessages[0]
+					if !reflect.DeepEqual(receivedMessage.Data, test.Msg.Data) {
+						t.Fatalf("Published incorrect message data, expected: %v, received: %v", test.Msg.Data, receivedMessage.Data)
+					}
+					if receivedMessage.Topic != test.Msg.Topic {
+						t.Fatalf("Published to incorrect topic, expected: %v, received: %v", test.Msg.Topic, receivedMessage.Topic)
+					}
 				}
-				if !reflect.DeepEqual(mockIpfsApi.pubsub.publishedMessages[0], &test.Msg) {
-					t.Fatalf("Published incorrect message,expected: %v, received: %v", test.Msg, mockIpfsApi.pubsub.publishedMessages[0])
-				}
+
 				Assert(t, 0, metricService.counts[models.MetricName_IpfsError], "incorrect ipfs errors counted")
 			} else {
 				if err == nil {
@@ -120,9 +148,10 @@ func TestIPFSRoundRobin(t *testing.T) {
 	ipfsInstance3.withLimiter()
 	ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance1, &ipfsInstance2, &ipfsInstance3}
 
-	encodedMsg, err := json.Marshal(PubSubPublishArgs{
-		Topic: "/go-cas/tests",
-		Data:  []byte("cats"),
+	encodedMsg, err := json.Marshal(models.IpfsPubsubPublishMessage{
+		CreatedAt: time.Now(),
+		Topic:     "/go-cas/tests",
+		Data:      []byte("cats"),
 	})
 	if err != nil {
 		t.Fatalf("Failed to encode msg: %v", err)
