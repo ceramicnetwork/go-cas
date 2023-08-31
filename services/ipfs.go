@@ -27,6 +27,7 @@ type IpfsApi interface {
 }
 
 type IpfsWithRateLimiting struct {
+	logger          models.Logger
 	multiAddressStr string
 	api             IpfsApi
 	limiter         *ratelimiter.RateLimiter[string, any]
@@ -45,7 +46,7 @@ func NewIpfsWithRateLimiting(logger models.Logger, multiAddressStr string, metri
 		logger.Fatalf("Error creating ipfs client at %s: %v", multiAddressStr, err)
 	}
 
-	ipfs := IpfsWithRateLimiting{api: api, multiAddressStr: multiAddressStr, metricService: metricService, validator: validator.New()}
+	ipfs := IpfsWithRateLimiting{api: api, multiAddressStr: multiAddressStr, metricService: metricService, validator: validator.New(), logger: logger}
 
 	ipfs.withLimiter()
 
@@ -67,11 +68,15 @@ func (i *IpfsWithRateLimiting) limiterRunFunction(ctx context.Context, msgBody s
 	var result any
 	var isKnownTask bool
 
+	i.logger.Debugf("received ipfs task request %v", msgBody)
+
 	// Unmarshal into one of the known ipfs tasks. Currently there is only one
 	pubsubPublishArgs := new(models.IpfsPubsubPublishMessage)
 	if err := json.Unmarshal([]byte(msgBody), &pubsubPublishArgs); err == nil {
 		if err := i.validator.Struct(pubsubPublishArgs); err == nil {
 			isKnownTask = true
+
+			i.logger.Debugf("received ipfs pubsub publish request %v", pubsubPublishArgs)
 
 			now := time.Now()
 			if now.After(pubsubPublishArgs.CreatedAt.Add(time.Minute)) {
@@ -84,6 +89,8 @@ func (i *IpfsWithRateLimiting) limiterRunFunction(ctx context.Context, msgBody s
 
 				ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(time.Millisecond*time.Duration(timeoutMs)))
 				defer cancel()
+
+				i.logger.Debugf("publishing to ipfs pubsub %v on ipfs %v", pubsubPublishArgs, i.multiAddressStr)
 				if err := i.api.PubSub().Publish(ctxWithTimeout, pubsubPublishArgs.Topic, pubsubPublishArgs.Data); err != nil {
 					ipfsError = fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %v", i.multiAddressStr, err)
 				}

@@ -56,7 +56,7 @@ func TestPubsub(t *testing.T) {
 			metricService := &MockMetricService{}
 			ipfsService := NewIpfsService(logger, metricService)
 			mockIpfsApi := &MockIpfsApi{}
-			ipfsInstance := IpfsWithRateLimiting{multiAddressStr: "test", api: mockIpfsApi, metricService: metricService, validator: validator.New()}
+			ipfsInstance := IpfsWithRateLimiting{multiAddressStr: "test", api: mockIpfsApi, metricService: metricService, validator: validator.New(), logger: logger}
 			ipfsInstance.withLimiter()
 			ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance}
 
@@ -110,7 +110,7 @@ func TestIPFSUnsupportTask(t *testing.T) {
 	metricService := &MockMetricService{}
 	ipfsService := NewIpfsService(logger, metricService)
 	mockIpfsApi := &MockIpfsApi{}
-	ipfsInstance := IpfsWithRateLimiting{multiAddressStr: "test", api: mockIpfsApi, metricService: metricService, validator: validator.New()}
+	ipfsInstance := IpfsWithRateLimiting{multiAddressStr: "test", api: mockIpfsApi, metricService: metricService, validator: validator.New(), logger: logger}
 	ipfsInstance.withLimiter()
 	ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance}
 
@@ -138,13 +138,13 @@ func TestIPFSRoundRobin(t *testing.T) {
 	ipfsService := NewIpfsService(logger, metricService)
 
 	mockIpfsApi1 := &MockIpfsApi{}
-	ipfsInstance1 := IpfsWithRateLimiting{multiAddressStr: "test1", api: mockIpfsApi1, metricService: metricService, validator: validator.New()}
+	ipfsInstance1 := IpfsWithRateLimiting{multiAddressStr: "test1", api: mockIpfsApi1, metricService: metricService, validator: validator.New(), logger: logger}
 	ipfsInstance1.withLimiter()
 	mockIpfsApi2 := &MockIpfsApi{}
-	ipfsInstance2 := IpfsWithRateLimiting{multiAddressStr: "test2", api: mockIpfsApi2, metricService: metricService, validator: validator.New()}
+	ipfsInstance2 := IpfsWithRateLimiting{multiAddressStr: "test2", api: mockIpfsApi2, metricService: metricService, validator: validator.New(), logger: logger}
 	ipfsInstance2.withLimiter()
 	mockIpfsApi3 := &MockIpfsApi{}
-	ipfsInstance3 := IpfsWithRateLimiting{multiAddressStr: "test3", api: mockIpfsApi3, metricService: metricService, validator: validator.New()}
+	ipfsInstance3 := IpfsWithRateLimiting{multiAddressStr: "test3", api: mockIpfsApi3, metricService: metricService, validator: validator.New(), logger: logger}
 	ipfsInstance3.withLimiter()
 	ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance1, &ipfsInstance2, &ipfsInstance3}
 
