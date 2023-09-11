@@ -45,6 +45,10 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 				AttributeName: aws.String("ts"),
 				AttributeType: "N",
 			},
+			{
+				AttributeName: aws.String("id"),
+				AttributeType: "S",
+			},
 		},
 		KeySchema: []types.KeySchemaElement{
 			{
@@ -60,6 +64,28 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 		ProvisionedThroughput: &types.ProvisionedThroughput{
 			ReadCapacityUnits:  aws.Int64(1),
 			WriteCapacityUnits: aws.Int64(1),
+		},
+		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
+			{
+				IndexName: aws.String(idTsIndex),
+				KeySchema: []types.KeySchemaElement{
+					{
+						AttributeName: aws.String("id"),
+						KeyType:       "HASH",
+					},
+					{
+						AttributeName: aws.String("ts"),
+						KeyType:       "RANGE",
+					},
+				},
+				Projection: &types.Projection{
+					ProjectionType: types.ProjectionTypeAll,
+				},
+				ProvisionedThroughput: &types.ProvisionedThroughput{
+					ReadCapacityUnits:  aws.Int64(1),
+					WriteCapacityUnits: aws.Int64(1),
+				},
+			},
 		},
 	}
 	return createTable(ctx, jdb.logger, jdb.ddbClient, &createJobTableInput)
