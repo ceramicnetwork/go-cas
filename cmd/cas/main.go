@@ -25,6 +25,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/common/notifs"
 	"github.com/ceramicnetwork/go-cas/models"
 	"github.com/ceramicnetwork/go-cas/services"
+	"github.com/ceramicnetwork/go-cas/services/batch"
 )
 
 func main() {
@@ -224,7 +225,7 @@ func main() {
 	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
 	// and processed in parallel.
 	maxBatchQueueWorkers := anchorBatchSize * 2
-	batchingService := services.NewBatchingService(serverCtx, logger, batchQueue, metricService)
+	batchingService := batch.NewBatchingService(serverCtx, logger, batchQueue, metricService)
 	batchingConsumer := queue.NewConsumer(logger, readyQueue, batchingService.Batch, &maxBatchQueueWorkers)
 
 	// The Validation service reads from the Validate queue and posts to the Ready and Status queues

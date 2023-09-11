@@ -1,4 +1,4 @@
-package services
+package batch
 
 import (
 	"context"
@@ -6,9 +6,11 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
-	"github.com/google/uuid"
+	"github.com/ceramicnetwork/go-cas/services"
 )
 
 func TestBatch(t *testing.T) {
@@ -34,25 +36,25 @@ func TestBatch(t *testing.T) {
 	logger := loggers.NewTestLogger()
 
 	tests := map[string]struct {
-		publisher                        *MockPublisher
+		publisher                        *services.MockPublisher
 		expectedNumberOfRequestsPerBatch []int
 		shouldError                      bool
 		encodedRequests                  []string
 	}{
 		"Can create batches after linger and when full": {
-			publisher:                        &MockPublisher{messages: make(chan any, 2)},
+			publisher:                        &services.MockPublisher{messages: make(chan any, 2)},
 			expectedNumberOfRequestsPerBatch: []int{3, 2},
 			shouldError:                      false,
 			encodedRequests:                  encodedRequests,
 		},
 		"Should return error if requests are malformed": {
-			publisher:                        &MockPublisher{messages: make(chan any, 2)},
+			publisher:                        &services.MockPublisher{messages: make(chan any, 2)},
 			expectedNumberOfRequestsPerBatch: []int{},
 			shouldError:                      true,
 			encodedRequests:                  []string{"hello"},
 		},
 		"Should return error if cannot publish batch": {
-			publisher:                        &MockPublisher{messages: make(chan any, 2), errorOn: 1},
+			publisher:                        &services.MockPublisher{messages: make(chan any, 2), errorOn: 1},
 			expectedNumberOfRequestsPerBatch: []int{},
 			shouldError:                      true,
 			encodedRequests:                  encodedRequests[:3],
@@ -62,7 +64,7 @@ func TestBatch(t *testing.T) {
 	testCtx := context.Background()
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			metricService := &MockMetricService{}
+			metricService := &services.MockMetricService{}
 			batchingServices := NewBatchingService(testCtx, logger, test.publisher, metricService)
 			ctx, cancel := context.WithCancel(testCtx)
 
@@ -93,10 +95,10 @@ func TestBatch(t *testing.T) {
 				if len(test.publisher.messages) != 0 {
 					t.Errorf("Received %v messages but should have received none", len(test.publisher.messages))
 				}
-				Assert(t, 0, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
+				services.Assert(t, 0, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
 			} else {
 				// with 5 requests 2 batches should have been created
-				receivedMessages := waitForMesssages(test.publisher.messages, 2)
+				receivedMessages := services.waitForMesssages(test.publisher.messages, 2)
 				wg.Wait()
 				cancel()
 
@@ -120,8 +122,8 @@ func TestBatch(t *testing.T) {
 					numIngressRequests += numRequestsInBatch
 				}
 
-				Assert(t, numIngressRequests, metricService.counts[models.MetricName_BatchIngressRequest], "Incorrect batch ingress request count")
-				Assert(t, 2, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
+				services.Assert(t, numIngressRequests, metricService.counts[models.MetricName_BatchIngressRequest], "Incorrect batch ingress request count")
+				services.Assert(t, 2, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
 			}
 		})
 	}
