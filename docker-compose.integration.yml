@@ -2,8 +2,7 @@ version: '3.4'
 
 services:
   e2e_tests:
-    build:
-      context: ../ceramic-integration-tests
+    image: public.ecr.aws/r5b3e0r5/3box/ceramic-e2e-tests
     container_name: e2e_tests
     environment:
       - NODE_ENV=docker

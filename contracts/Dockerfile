@@ -1,7 +1,7 @@
 FROM ghcr.io/foundry-rs/foundry as contractLauncher
 
 # Build and test the source code
-COPY ./contracts .
+COPY . .
 RUN forge install foundry-rs/forge-std --no-git
 RUN forge install openzeppelin/openzeppelin-contracts@v4.8.0 --no-git
 RUN forge build --use 0.8.13

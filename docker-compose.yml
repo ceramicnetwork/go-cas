@@ -33,10 +33,7 @@ services:
       - internal
 
   cas_worker:
-    build:
-      context: ../ceramic-anchor-service
-      target: base
-    restart: unless-stopped
+    image: ceramicnetwork/ceramic-anchor-service:develop
     environment:
       - NODE_ENV=dev
       - APP_MODE=anchor
@@ -71,6 +68,7 @@ services:
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=.
       - AWS_SECRET_ACCESS_KEY=.
+      - SCHEDULER_STOP_AFTER_NO_OP=false
     depends_on:
       localstack:
         condition: service_healthy
@@ -89,9 +87,7 @@ services:
       replicas: 1
 
   cas_api:
-    build:
-      context: ../ceramic-anchor-service
-      target: base
+    image: ceramicnetwork/ceramic-anchor-service:develop
     container_name: cas_api
     environment:
       - NODE_ENV=dev
@@ -211,9 +207,7 @@ services:
       - internal
 
   launch_contract:
-    build:
-      context: .
-      dockerfile: Dockerfile.launchContract
+    image: public.ecr.aws/r5b3e0r5/3box/cas-contract
     container_name: contract
     environment:
       - ETH_RPC_URL=http://ganache:8545
