@@ -65,9 +65,24 @@ jobs:
         if: ${{ env.BRANCH == 'main' || env.BRANCH == 'release-candidate' || env.BRANCH == 'develop' }}
         run: echo "PUBLISH=true" >> $GITHUB_ENV
       -
-        name: Build and push image
+        name: Push private image
         if: ${{ env.PUBLISH == 'true' }}
         run: go run ci/cmd/build/main.go
+      -
+        name: Login to public ECR
+        uses: docker/login-action@v2
+        with:
+          registry: public.ecr.aws
+          username: ${{ env.AWS_ACCESS_KEY_ID }}
+          password: ${{ env.AWS_SECRET_ACCESS_KEY }}
+        env:
+          AWS_REGION: us-east-1
+      -
+        name: Push public image
+        run: |
+          docker buildx build --load -t 3box/go-cas .
+          docker tag 3box/go-cas:latest public.ecr.aws/r5b3e0r5/3box/go-cas:latest
+          docker push public.ecr.aws/r5b3e0r5/3box/go-cas:latest
       -
         name: Create deployment job
         if: ${{ env.PUBLISH == 'true' }}
