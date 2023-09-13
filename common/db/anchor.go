@@ -30,11 +30,11 @@ type anchorDbOpts struct {
 
 func NewAnchorDb(logger models.Logger) *AnchorDatabase {
 	return &AnchorDatabase{anchorDbOpts{
-		Host:     os.Getenv(common.Env_PgHost),
-		Port:     os.Getenv(common.Env_PgPort),
-		User:     os.Getenv(common.Env_PgUser),
-		Password: os.Getenv(common.Env_PgPassword),
-		Name:     os.Getenv(common.Env_PgDb),
+		Host:     os.Getenv(common.Env_DbHost),
+		Port:     os.Getenv(common.Env_DbPort),
+		User:     os.Getenv(common.Env_DbUsername),
+		Password: os.Getenv(common.Env_DbPassword),
+		Name:     os.Getenv(common.Env_DbName),
 	}, logger}
 }
 
