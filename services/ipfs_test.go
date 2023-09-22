@@ -8,9 +8,13 @@ import (
 	"testing"
 	"time"
 
+	iface "github.com/ipfs/boxo/coreiface"
+	"github.com/ipfs/kubo/core"
+	ipfsMock "github.com/ipfs/kubo/core/mock"
+	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
+
 	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
-	"github.com/go-playground/validator"
 )
 
 func TestPubsub(t *testing.T) {
@@ -34,7 +38,7 @@ func TestPubsub(t *testing.T) {
 				CreatedAt: time.Now(),
 				Topic:     "/go-cas/tests",
 				Data:      []byte("cats"),
-				TimeoutMs: 1,
+				TimeoutMs: 10,
 			},
 			ShouldError: true,
 		},
@@ -51,14 +55,23 @@ func TestPubsub(t *testing.T) {
 
 	logger := loggers.NewTestLogger()
 
+	mockNode, _ := core.NewNode(context.Background(), &core.BuildCfg{
+		Online: true,
+		Host:   ipfsMock.MockHostOption(mocknet.New()),
+		ExtraOpts: map[string]bool{
+			"pubsub": true,
+		},
+	})
+	defer mockNode.Close()
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
+			mockCoreApi := NewMockIpfsCoreApi(mockNode)
 			metricService := &MockMetricService{}
 			ipfsService := NewIpfsService(logger, metricService)
-			mockIpfsApi := &MockIpfsApi{}
-			ipfsInstance := IpfsWithRateLimiting{multiAddressStr: "test", api: mockIpfsApi, metricService: metricService, validator: validator.New(), logger: logger}
+			ipfsInstance := IpfsApi{multiAddressStr: "test", CoreAPI: mockCoreApi, metricService: metricService, logger: logger}
 			ipfsInstance.withLimiter()
-			ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance}
+			ipfsService.ipfsInstances = []iface.CoreAPI{ipfsInstance}
 
 			encodedMsg, err := json.Marshal(test.Msg)
 			if err != nil {
@@ -72,17 +85,15 @@ func TestPubsub(t *testing.T) {
 				}
 
 				if test.ShouldNotPublish {
-					// instantiate pubsub if it has not
-					mockIpfsApi.PubSub()
-					if len(mockIpfsApi.pubsub.publishedMessages) != 0 {
-						t.Fatalf("should have published 0 message, published %v messages", len(mockIpfsApi.pubsub.publishedMessages))
+					if len(mockCoreApi.pubsubApi.publishedMessages) != 0 {
+						t.Fatalf("should have published 0 message, published %v messages", len(mockCoreApi.pubsubApi.publishedMessages))
 					}
 
 				} else {
-					if len(mockIpfsApi.pubsub.publishedMessages) != 1 {
-						t.Fatalf("should have published 1 message, published %v messages", len(mockIpfsApi.pubsub.publishedMessages))
+					if len(mockCoreApi.pubsubApi.publishedMessages) != 1 {
+						t.Fatalf("should have published 1 message, published %v messages", len(mockCoreApi.pubsubApi.publishedMessages))
 					}
-					receivedMessage := mockIpfsApi.pubsub.publishedMessages[0]
+					receivedMessage := mockCoreApi.pubsubApi.publishedMessages[0]
 					if !reflect.DeepEqual(receivedMessage.Data, test.Msg.Data) {
 						t.Fatalf("Published incorrect message data, expected: %v, received: %v", test.Msg.Data, receivedMessage.Data)
 					}
@@ -96,10 +107,10 @@ func TestPubsub(t *testing.T) {
 				if err == nil {
 					t.Fatalf("Should have failed publishing msg")
 				}
-				if len(mockIpfsApi.pubsub.publishedMessages) != 0 {
-					t.Fatalf("Should not have published msg %v", mockIpfsApi.pubsub.publishedMessages[0])
+				if len(mockCoreApi.pubsubApi.publishedMessages) != 0 {
+					t.Fatalf("Should not have published msg %v", mockCoreApi.pubsubApi.publishedMessages[0])
 				}
-				Assert(t, 1, metricService.counts[models.MetricName_IpfsError], "incorrect ipfs errors counted")
+				Assert(t, 1, metricService.counts[models.MetricName_IpfsPubsubPublishExpired], "incorrect expired tasks counted")
 			}
 		})
 	}
@@ -109,10 +120,19 @@ func TestIPFSUnsupportTask(t *testing.T) {
 	logger := loggers.NewTestLogger()
 	metricService := &MockMetricService{}
 	ipfsService := NewIpfsService(logger, metricService)
-	mockIpfsApi := &MockIpfsApi{}
-	ipfsInstance := IpfsWithRateLimiting{multiAddressStr: "test", api: mockIpfsApi, metricService: metricService, validator: validator.New(), logger: logger}
+
+	mockNode, _ := core.NewNode(context.Background(), &core.BuildCfg{
+		Online: true,
+		Host:   ipfsMock.MockHostOption(mocknet.New()),
+		ExtraOpts: map[string]bool{
+			"pubsub": true,
+		},
+	})
+	defer mockNode.Close()
+	mockCoreApi := NewMockIpfsCoreApi(mockNode)
+	ipfsInstance := IpfsApi{multiAddressStr: "test", CoreAPI: mockCoreApi, metricService: metricService, logger: logger}
 	ipfsInstance.withLimiter()
-	ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance}
+	ipfsService.ipfsInstances = []iface.CoreAPI{ipfsInstance}
 
 	encodedMsg, err := json.Marshal(struct {
 		Name   string
@@ -137,16 +157,25 @@ func TestIPFSRoundRobin(t *testing.T) {
 	metricService := &MockMetricService{}
 	ipfsService := NewIpfsService(logger, metricService)
 
-	mockIpfsApi1 := &MockIpfsApi{}
-	ipfsInstance1 := IpfsWithRateLimiting{multiAddressStr: "test1", api: mockIpfsApi1, metricService: metricService, validator: validator.New(), logger: logger}
+	mockNode, _ := core.NewNode(context.Background(), &core.BuildCfg{
+		Online: true,
+		Host:   ipfsMock.MockHostOption(mocknet.New()),
+		ExtraOpts: map[string]bool{
+			"pubsub": true,
+		},
+	})
+	defer mockNode.Close()
+
+	mockCoreApi1 := NewMockIpfsCoreApi(mockNode)
+	ipfsInstance1 := IpfsApi{multiAddressStr: "test", CoreAPI: mockCoreApi1, metricService: metricService, logger: logger}
 	ipfsInstance1.withLimiter()
-	mockIpfsApi2 := &MockIpfsApi{}
-	ipfsInstance2 := IpfsWithRateLimiting{multiAddressStr: "test2", api: mockIpfsApi2, metricService: metricService, validator: validator.New(), logger: logger}
+	mockCoreApi2 := NewMockIpfsCoreApi(mockNode)
+	ipfsInstance2 := IpfsApi{multiAddressStr: "test", CoreAPI: mockCoreApi2, metricService: metricService, logger: logger}
 	ipfsInstance2.withLimiter()
-	mockIpfsApi3 := &MockIpfsApi{}
-	ipfsInstance3 := IpfsWithRateLimiting{multiAddressStr: "test3", api: mockIpfsApi3, metricService: metricService, validator: validator.New(), logger: logger}
+	mockCoreApi3 := NewMockIpfsCoreApi(mockNode)
+	ipfsInstance3 := IpfsApi{multiAddressStr: "test", CoreAPI: mockCoreApi3, metricService: metricService, logger: logger}
 	ipfsInstance3.withLimiter()
-	ipfsService.ipfsInstances = []*IpfsWithRateLimiting{&ipfsInstance1, &ipfsInstance2, &ipfsInstance3}
+	ipfsService.ipfsInstances = []iface.CoreAPI{ipfsInstance1, ipfsInstance2, ipfsInstance3}
 
 	encodedMsg, err := json.Marshal(models.IpfsPubsubPublishMessage{
 		CreatedAt: time.Now(),
@@ -179,13 +208,13 @@ func TestIPFSRoundRobin(t *testing.T) {
 		t.Fatalf("Received error : %v", err)
 	}
 
-	if len(mockIpfsApi1.pubsub.publishedMessages) != 3 {
-		t.Fatalf("First ipfs should have published 3 message, published %v messages", len(mockIpfsApi1.pubsub.publishedMessages))
+	if len(mockCoreApi1.pubsubApi.publishedMessages) != 3 {
+		t.Fatalf("First ipfs should have published 3 message, published %v messages", len(mockCoreApi1.pubsubApi.publishedMessages))
 	}
-	if len(mockIpfsApi2.pubsub.publishedMessages) != 2 {
-		t.Fatalf("Second ipfs should have published 2 message, published %v messages", len(mockIpfsApi2.pubsub.publishedMessages))
+	if len(mockCoreApi2.pubsubApi.publishedMessages) != 2 {
+		t.Fatalf("Second ipfs should have published 2 message, published %v messages", len(mockCoreApi2.pubsubApi.publishedMessages))
 	}
-	if len(mockIpfsApi3.pubsub.publishedMessages) != 2 {
-		t.Fatalf("Third ipfs should have published 2 message, published %v messages", len(mockIpfsApi3.pubsub.publishedMessages))
+	if len(mockCoreApi3.pubsubApi.publishedMessages) != 2 {
+		t.Fatalf("Third ipfs should have published 2 message, published %v messages", len(mockCoreApi3.pubsubApi.publishedMessages))
 	}
 }

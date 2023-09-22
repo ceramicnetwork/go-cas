@@ -12,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	iface "github.com/ipfs/boxo/coreiface"
 	"github.com/ipfs/boxo/coreiface/options"
+	"github.com/ipfs/kubo/core"
+	"github.com/ipfs/kubo/core/coreapi"
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/ceramicnetwork/go-cas/models"
@@ -267,15 +269,43 @@ func (i *MockIpfsPubSubApi) Subscribe(context.Context, string, ...options.PubSub
 	return nil, fmt.Errorf("not implemented")
 }
 
-type MockIpfsApi struct {
+type MockIpfsApiOld struct {
 	pubsub *MockIpfsPubSubApi
 }
 
-func (i *MockIpfsApi) PubSub() iface.PubSubAPI {
+func (i *MockIpfsApiOld) PubSub() iface.PubSubAPI {
 	if i.pubsub == nil {
 		i.pubsub = &MockIpfsPubSubApi{}
 	}
 
 	return i.pubsub
 
+}
+
+type MockPubsubApi struct {
+	iface.PubSubAPI
+	publishedMessages []models.IpfsPubsubPublishMessage
+}
+
+func (p *MockPubsubApi) Publish(ctx context.Context, topic string, data []byte) error {
+	time.Sleep(time.Millisecond * 20)
+	p.publishedMessages = append(p.publishedMessages, models.IpfsPubsubPublishMessage{CreatedAt: time.Now(), Topic: topic, Data: data})
+	fmt.Println(p.publishedMessages)
+
+	return nil
+}
+
+type MockIpfsCoreApi struct {
+	iface.CoreAPI
+	pubsubApi MockPubsubApi
+}
+
+func NewMockIpfsCoreApi(node *core.IpfsNode) *MockIpfsCoreApi {
+	api, _ := coreapi.NewCoreAPI(node)
+
+	return &MockIpfsCoreApi{CoreAPI: api, pubsubApi: MockPubsubApi{PubSubAPI: api.PubSub()}}
+}
+
+func (i *MockIpfsCoreApi) PubSub() iface.PubSubAPI {
+	return &i.pubsubApi
 }
