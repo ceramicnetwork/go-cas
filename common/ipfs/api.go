@@ -1,4 +1,4 @@
-package services
+package ipfs
 
 import (
 	"context"
@@ -13,10 +13,10 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const DefaultIpfsRateLimit = 16
-const DefaultIpfsBurstLimit = 16
-const DefaultIpfsLimiterMaxQueueDepth = 100
-const DefaultIpfsPublishPubsubTimeoutMs = 30
+const defaultIpfsRateLimit = 16
+const defaultIpfsBurstLimit = 16
+const defaultIpfsLimiterMaxQueueDepth = 100
+const defaultIpfsPublishPubsubTimeoutS = 30
 
 type PubSubPublishTask struct {
 	Topic string
@@ -37,6 +37,7 @@ func (p *PubSubApi) Publish(ctx context.Context, topic string, data []byte) erro
 	} else {
 		if ctx.Err() != nil {
 			p.metricService.Count(ctx, models.MetricName_IpfsPubsubPublishExpired, 1)
+			return nil
 		}
 		return err
 	}
@@ -51,59 +52,53 @@ type IpfsApi struct {
 	pubsubApi       *PubSubApi
 }
 
+func NewIpfsApiWithCore(logger models.Logger, multiAddressStr string, coreApi iface.CoreAPI, metricService models.MetricService) *IpfsApi {
+	ipfs := IpfsApi{CoreAPI: coreApi, logger: logger, multiAddressStr: multiAddressStr, metricService: metricService}
+	limiterOpts := ratelimiter.Opts{
+		Limit:             defaultIpfsRateLimit,
+		Burst:             defaultIpfsBurstLimit,
+		MaxQueueDepth:     defaultIpfsLimiterMaxQueueDepth,
+		FullQueueStrategy: ratelimiter.BlockWhenFull,
+	}
+	ipfs.limiter = ratelimiter.New(limiterOpts, ipfs.limiterRunFunction)
+	ipfs.pubsubApi = &PubSubApi{PubSubAPI: ipfs.CoreAPI.PubSub(), limiter: ipfs.limiter, metricService: ipfs.metricService}
+
+	return &ipfs
+}
+
 func NewIpfsApi(logger models.Logger, multiAddressStr string, metricService models.MetricService) *IpfsApi {
 	addr, err := ma.NewMultiaddr(multiAddressStr)
 	if err != nil {
 		logger.Fatalf("Error creating multiaddress for %s: %v", multiAddressStr, err)
 	}
 
-	api, err := rpc.NewApi(addr)
+	coreApi, err := rpc.NewApi(addr)
 	if err != nil {
 		logger.Fatalf("Error creating ipfs client at %s: %v", multiAddressStr, err)
 	}
 
-	ipfs := IpfsApi{CoreAPI: api, logger: logger, multiAddressStr: multiAddressStr, metricService: metricService}
-	ipfs.withLimiter()
-
-	return &ipfs
+	return NewIpfsApiWithCore(logger, multiAddressStr, coreApi, metricService)
 }
 
 func (i IpfsApi) PubSub() iface.PubSubAPI {
 	return i.pubsubApi
 }
 
-func (i *IpfsApi) withLimiter() {
-	limiterOpts := ratelimiter.Opts{
-		Limit:             DefaultIpfsRateLimit,
-		Burst:             DefaultIpfsBurstLimit,
-		MaxQueueDepth:     DefaultIpfsLimiterMaxQueueDepth,
-		FullQueueStrategy: ratelimiter.BlockWhenFull,
-	}
-	i.limiter = ratelimiter.New(limiterOpts, i.limiterRunFunction)
-	i.pubsubApi = &PubSubApi{PubSubAPI: i.CoreAPI.PubSub(), limiter: i.limiter, metricService: i.metricService}
-}
-
 func (i *IpfsApi) limiterRunFunction(ctx context.Context, task any) (any, error) {
-
 	var ipfsError error
 	var result any
 	if pubsubPublishTask, ok := task.(PubSubPublishTask); ok {
-		fmt.Println("is publish task")
-		if _, deadlineSet := ctx.Deadline(); !deadlineSet {
-			ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(time.Millisecond*time.Duration(DefaultIpfsPublishPubsubTimeoutMs)))
-			ctx = ctxWithTimeout
-			defer cancel()
-		}
+		// set a default timeout
+		ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(time.Second*time.Duration(defaultIpfsPublishPubsubTimeoutS)))
+		defer cancel()
 
 		i.logger.Debugf("publishing %v to ipfs pubsub on ipfs %v", pubsubPublishTask, i.multiAddressStr)
-		if err := i.CoreAPI.PubSub().Publish(ctx, pubsubPublishTask.Topic, pubsubPublishTask.Data); err != nil {
+		if err := i.CoreAPI.PubSub().Publish(ctxWithTimeout, pubsubPublishTask.Topic, pubsubPublishTask.Data); err != nil {
 			ipfsError = fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %v", i.multiAddressStr, err)
 		}
 	} else {
-		fmt.Println("wtf")
 		return result, fmt.Errorf("unknown ipfs task received %v", task)
 	}
-	fmt.Println("after it all")
 
 	if ipfsError != nil {
 		i.metricService.Count(ctx, models.MetricName_IpfsError, 1)

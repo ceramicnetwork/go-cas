@@ -29,5 +29,4 @@ type IpfsPubsubPublishMessage struct {
 	CreatedAt time.Time `json:"createdAt" validate:"required"`
 	Topic     string    `json:"topic" validate:"required"`
 	Data      []byte    `json:"data" validate:"required"`
-	TimeoutMs int       `json:"timeoutMs,omitempty"`
 }

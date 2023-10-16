@@ -11,10 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	iface "github.com/ipfs/boxo/coreiface"
-	"github.com/ipfs/boxo/coreiface/options"
 	"github.com/ipfs/kubo/core"
 	"github.com/ipfs/kubo/core/coreapi"
-	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/ceramicnetwork/go-cas/models"
 )
@@ -242,57 +240,19 @@ type MockNotifier struct{}
 
 func (n MockNotifier) SendAlert(string, string, string) error { return nil }
 
-type MockIpfsPubSubApi struct {
-	publishedMessages []models.IpfsPubsubPublishMessage
-}
-
-func (i *MockIpfsPubSubApi) Ls(context.Context) ([]string, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (i MockIpfsPubSubApi) Peers(context.Context, ...options.PubSubPeersOption) ([]peer.ID, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-func (i *MockIpfsPubSubApi) Publish(ctx context.Context, topic string, data []byte) error {
-	time.Sleep(time.Millisecond * 5)
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("timed out while publishing")
-	default:
-		i.publishedMessages = append(i.publishedMessages, models.IpfsPubsubPublishMessage{CreatedAt: time.Now(), Topic: topic, Data: data})
-		return nil
-	}
-}
-
-func (i *MockIpfsPubSubApi) Subscribe(context.Context, string, ...options.PubSubSubscribeOption) (iface.PubSubSubscription, error) {
-	return nil, fmt.Errorf("not implemented")
-}
-
-type MockIpfsApiOld struct {
-	pubsub *MockIpfsPubSubApi
-}
-
-func (i *MockIpfsApiOld) PubSub() iface.PubSubAPI {
-	if i.pubsub == nil {
-		i.pubsub = &MockIpfsPubSubApi{}
-	}
-
-	return i.pubsub
-
-}
-
 type MockPubsubApi struct {
 	iface.PubSubAPI
 	publishedMessages []models.IpfsPubsubPublishMessage
 }
 
 func (p *MockPubsubApi) Publish(ctx context.Context, topic string, data []byte) error {
-	time.Sleep(time.Millisecond * 20)
-	p.publishedMessages = append(p.publishedMessages, models.IpfsPubsubPublishMessage{CreatedAt: time.Now(), Topic: topic, Data: data})
-	fmt.Println(p.publishedMessages)
-
-	return nil
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("timed out while publishing")
+	default:
+		p.publishedMessages = append(p.publishedMessages, models.IpfsPubsubPublishMessage{CreatedAt: time.Now(), Topic: topic, Data: data})
+		return nil
+	}
 }
 
 type MockIpfsCoreApi struct {
