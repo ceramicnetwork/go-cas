@@ -64,11 +64,8 @@ func (sdb *StateDatabase) createCheckpointTable(ctx context.Context) error {
 				KeyType:       "HASH",
 			},
 		},
-		TableName: aws.String(sdb.checkpointTable),
-		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(1),
-			WriteCapacityUnits: aws.Int64(1),
-		},
+		TableName:   aws.String(sdb.checkpointTable),
+		BillingMode: types.BillingModePayPerRequest,
 	}
 	return createTable(ctx, sdb.logger, sdb.client, &createStreamTableInput)
 }
@@ -95,11 +92,8 @@ func (sdb *StateDatabase) createStreamTable(ctx context.Context) error {
 				KeyType:       "RANGE",
 			},
 		},
-		TableName: aws.String(sdb.streamTable),
-		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(1),
-			WriteCapacityUnits: aws.Int64(1),
-		},
+		TableName:   aws.String(sdb.streamTable),
+		BillingMode: types.BillingModePayPerRequest,
 	}
 	return createTable(ctx, sdb.logger, sdb.client, &createTableInput)
 }
@@ -126,11 +120,8 @@ func (sdb *StateDatabase) createTipTable(ctx context.Context) error {
 				KeyType:       "RANGE",
 			},
 		},
-		TableName: aws.String(sdb.tipTable),
-		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(1),
-			WriteCapacityUnits: aws.Int64(1),
-		},
+		TableName:   aws.String(sdb.tipTable),
+		BillingMode: types.BillingModePayPerRequest,
 	}
 	return createTable(ctx, sdb.logger, sdb.client, &createTableInput)
 }

@@ -33,6 +33,8 @@ cloud.google.com/go/storage v1.10.0/go.mod h1:FLPqc6j+Ki4BU591ie1oL6qBQGu2Bl/tZ9
 dagger.io/dagger v0.7.1 h1:DVRMjMCsbsE/XhF5yAaDsUepgy9z8oGglaEiXvBbelw=
 dagger.io/dagger v0.7.1/go.mod h1:CL/Vw6H6oOqXNh8tVk2p6xaSXYgktosMXNUwIfQqKhg=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
+github.com/3box/pipeline-tools/cd/manager v0.0.0-20231023205204-e46c925731ad h1:uIFInU7YOvO1+/QHZ90mnw0lOv+YT1JAvSy6X076QZM=
+github.com/3box/pipeline-tools/cd/manager v0.0.0-20231023205204-e46c925731ad/go.mod h1:gtA3sWQni3fE0pjUmi3xb+R2mRakG1IQxgLY6CHJ5Pk=
 github.com/99designs/gqlgen v0.17.2 h1:yczvlwMsfcVu/JtejqfrLwXuSP0yZFhmcss3caEvHw8=
 github.com/99designs/gqlgen v0.17.2/go.mod h1:K5fzLKwtph+FFgh9j7nFbRUdBKvTcGnsta51fsMTn3o=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=

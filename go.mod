@@ -6,6 +6,7 @@ replace github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3 => github.c
 
 require (
 	dagger.io/dagger v0.7.1
+	github.com/3box/pipeline-tools/cd/manager v0.0.0-20231023205204-e46c925731ad
 	github.com/abevier/go-sqs v0.0.0-20230602180220-c0264a2611a3
 	github.com/abevier/tsk v0.0.0-20230712145722-249b1e98b01c
 	github.com/alexflint/go-arg v1.4.2
