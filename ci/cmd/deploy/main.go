@@ -38,7 +38,7 @@ func createJob(ctx context.Context) (string, error) {
 	// what the CD Manager expects.
 	if attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
-			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
+			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixNano(), 10)}, nil
 		}
 	}); err != nil {
 		return "", err
@@ -61,6 +61,6 @@ func createJob(ctx context.Context) (string, error) {
 				return "", err
 			}
 		}
-		return newJob.Id, nil
+		return newJob.Job, nil
 	}
 }

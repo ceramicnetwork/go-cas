@@ -48,9 +48,9 @@ func tableExists(ctx context.Context, logger models.Logger, client *dynamodb.Cli
 }
 
 func tsDecode(ts string) (time.Time, error) {
-	msec, err := strconv.ParseInt(ts, 10, 64)
+	nsec, err := strconv.ParseInt(ts, 10, 64)
 	if err != nil {
 		return time.Time{}, err
 	}
-	return time.UnixMilli(msec), nil
+	return time.Unix(0, nsec), nil
 }

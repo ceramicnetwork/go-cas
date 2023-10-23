@@ -227,7 +227,7 @@ func (sdb *StateDatabase) StoreCid(ctx context.Context, streamCid *models.Stream
 func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTip) (bool, *models.StreamTip, error) {
 	if attributeValues, err := attributevalue.MarshalMapWithOptions(newTip, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
-			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
+			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixNano(), 10)}, nil
 		}
 	}); err != nil {
 		return false, nil, err
@@ -238,7 +238,7 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 			ConditionExpression:      aws.String("attribute_not_exists(#id) OR (#ts <= :ts)"),
 			ExpressionAttributeNames: map[string]string{"#id": "id", "#ts": "ts"},
 			ExpressionAttributeValues: map[string]types.AttributeValue{
-				":ts": &types.AttributeValueMemberN{Value: strconv.FormatInt(newTip.Timestamp.UnixMilli(), 10)},
+				":ts": &types.AttributeValueMemberN{Value: strconv.FormatInt(newTip.Timestamp.UnixNano(), 10)},
 			},
 			Item:         attributeValues,
 			ReturnValues: types.ReturnValueAllOld,

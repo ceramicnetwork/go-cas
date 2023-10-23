@@ -17,7 +17,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const idTsIndex = "id-ts-index"
+const jobTsIndex = "job-ts-index"
 
 type JobDatabase struct {
 	ddbClient *dynamodb.Client
@@ -36,41 +36,42 @@ func NewJobDb(ctx context.Context, logger models.Logger, ddbClient *dynamodb.Cli
 
 func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 	createJobTableInput := dynamodb.CreateTableInput{
+		BillingMode: types.BillingModePayPerRequest,
 		AttributeDefinitions: []types.AttributeDefinition{
 			{
+				AttributeName: aws.String("id"),
+				AttributeType: "S",
+			},
+			{
+				AttributeName: aws.String("job"),
+				AttributeType: "S",
+			},
+			{
 				AttributeName: aws.String("stage"),
+				AttributeType: "S",
+			},
+			{
+				AttributeName: aws.String("type"),
 				AttributeType: "S",
 			},
 			{
 				AttributeName: aws.String("ts"),
 				AttributeType: "N",
 			},
-			{
-				AttributeName: aws.String("id"),
-				AttributeType: "S",
-			},
 		},
 		KeySchema: []types.KeySchemaElement{
 			{
-				AttributeName: aws.String("stage"),
+				AttributeName: aws.String("id"),
 				KeyType:       "HASH",
-			},
-			{
-				AttributeName: aws.String("ts"),
-				KeyType:       "RANGE",
 			},
 		},
 		TableName: aws.String(jdb.jobTable),
-		ProvisionedThroughput: &types.ProvisionedThroughput{
-			ReadCapacityUnits:  aws.Int64(1),
-			WriteCapacityUnits: aws.Int64(1),
-		},
 		GlobalSecondaryIndexes: []types.GlobalSecondaryIndex{
 			{
-				IndexName: aws.String(idTsIndex),
+				IndexName: aws.String(jobTsIndex),
 				KeySchema: []types.KeySchemaElement{
 					{
-						AttributeName: aws.String("id"),
+						AttributeName: aws.String("job"),
 						KeyType:       "HASH",
 					},
 					{
@@ -80,10 +81,6 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 				},
 				Projection: &types.Projection{
 					ProjectionType: types.ProjectionTypeAll,
-				},
-				ProvisionedThroughput: &types.ProvisionedThroughput{
-					ReadCapacityUnits:  aws.Int64(1),
-					WriteCapacityUnits: aws.Int64(1),
 				},
 			},
 		},
@@ -106,7 +103,7 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 	newJob := models.NewJob(models.JobType_Anchor, jobParams)
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
 		options.EncodeTime = func(time time.Time) (types.AttributeValue, error) {
-			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixMilli(), 10)}, nil
+			return &types.AttributeValueMemberN{Value: strconv.FormatInt(time.UnixNano(), 10)}, nil
 		}
 	})
 	if err != nil {
@@ -122,7 +119,7 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		} else {
-			return newJob.Id, nil
+			return newJob.Job, nil
 		}
 	}
 }
@@ -130,7 +127,7 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 func (jdb *JobDatabase) QueryJob(ctx context.Context, id string) (*models.JobState, error) {
 	queryInput := dynamodb.QueryInput{
 		TableName:                 aws.String(jdb.jobTable),
-		IndexName:                 aws.String(idTsIndex),
+		IndexName:                 aws.String(jobTsIndex),
 		KeyConditionExpression:    aws.String("#id = :id"),
 		ExpressionAttributeNames:  map[string]string{"#id": "id"},
 		ExpressionAttributeValues: map[string]types.AttributeValue{":id": &types.AttributeValueMemberS{Value: id}},

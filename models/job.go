@@ -8,6 +8,7 @@ import (
 
 const DeployComponent = "casv5"
 const WorkerVersion = "5"
+const DefaultJobTtl = 2 * 7 * 24 * time.Hour
 
 type JobType string
 
@@ -42,19 +43,23 @@ const (
 )
 
 type JobState struct {
+	Job    string                 `dynamodbav:"job"`
 	Stage  JobStage               `dynamodbav:"stage"`
-	Ts     time.Time              `dynamodbav:"ts"`
-	Id     string                 `dynamodbav:"id"`
 	Type   JobType                `dynamodbav:"type"`
+	Ts     time.Time              `dynamodbav:"ts"`
 	Params map[string]interface{} `dynamodbav:"params"`
+	Id     string                 `dynamodbav:"id" json:"-"`
+	Ttl    time.Time              `dynamodbav:"ttl,unixtime" json:"-"`
 }
 
 func NewJob(jobType JobType, params map[string]interface{}) JobState {
 	return JobState{
+		Job:    uuid.New().String(),
 		Stage:  JobStage_Queued,
-		Ts:     time.Now(),
-		Id:     uuid.New().String(),
 		Type:   jobType,
+		Ts:     time.Now(),
 		Params: params,
+		Id:     uuid.New().String(),
+		Ttl:    time.Now().Add(DefaultJobTtl),
 	}
 }
