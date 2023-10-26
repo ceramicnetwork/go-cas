@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
-	"github.com/3box/pipeline-tools/cd/manager"
+	"github.com/3box/pipeline-tools/cd/manager/common/job"
 
 	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
@@ -30,7 +30,7 @@ func main() {
 }
 
 func createJob(ctx context.Context) (string, error) {
-	newJob := models.NewJob(manager.JobType_Deploy, map[string]interface{}{
+	newJob := models.NewJob(job.JobType_Deploy, map[string]interface{}{
 		"component": models.DeployComponent,
 		"sha":       "latest",
 		"shaTag":    os.Getenv(cas.Env_ShaTag),

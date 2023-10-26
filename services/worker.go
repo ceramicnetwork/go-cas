@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/3box/pipeline-tools/cd/manager"
+	"github.com/3box/pipeline-tools/cd/manager/common/job"
 
 	"github.com/ceramicnetwork/go-cas/models"
 )
@@ -23,7 +23,7 @@ type WorkerService struct {
 	monitorTick        time.Duration
 	maxAnchorWorkers   int
 	amortizationFactor float64
-	anchorJobs         map[string]*manager.JobState
+	anchorJobs         map[string]*job.JobState
 	logger             models.Logger
 }
 
@@ -53,7 +53,7 @@ func NewWorkerService(logger models.Logger, batchMonitor models.QueueMonitor, jo
 		batchMonitorTick,
 		maxAnchorWorkers,
 		amortizationFactor,
-		make(map[string]*manager.JobState),
+		make(map[string]*job.JobState),
 		logger,
 	}
 }
@@ -116,7 +116,7 @@ func (w WorkerService) calculateLoad(ctx context.Context) (int, int, error) {
 	for jobId, _ := range w.anchorJobs {
 		if jobState, err := w.jobDb.QueryJob(ctx, jobId); err != nil {
 			return 0, 0, err
-		} else if (jobState.Stage == manager.JobStage_Completed) || (jobState.Stage == manager.JobStage_Failed) {
+		} else if (jobState.Stage == job.JobStage_Completed) || (jobState.Stage == job.JobStage_Failed) {
 			// Clean out finished jobs - "completed" and "failed" are the only possible terminal stages for anchor jobs.
 			delete(w.anchorJobs, jobId)
 		} else {

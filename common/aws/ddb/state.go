@@ -12,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
+	"github.com/3box/pipeline-tools/cd/manager/common/aws/utils"
+
 	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
@@ -67,7 +69,7 @@ func (sdb *StateDatabase) createCheckpointTable(ctx context.Context) error {
 		TableName:   aws.String(sdb.checkpointTable),
 		BillingMode: types.BillingModePayPerRequest,
 	}
-	return createTable(ctx, sdb.logger, sdb.client, &createStreamTableInput)
+	return utils.CreateTable(ctx, sdb.client, &createStreamTableInput)
 }
 
 func (sdb *StateDatabase) createStreamTable(ctx context.Context) error {
@@ -95,7 +97,7 @@ func (sdb *StateDatabase) createStreamTable(ctx context.Context) error {
 		TableName:   aws.String(sdb.streamTable),
 		BillingMode: types.BillingModePayPerRequest,
 	}
-	return createTable(ctx, sdb.logger, sdb.client, &createTableInput)
+	return utils.CreateTable(ctx, sdb.client, &createTableInput)
 }
 
 func (sdb *StateDatabase) createTipTable(ctx context.Context) error {
@@ -123,7 +125,7 @@ func (sdb *StateDatabase) createTipTable(ctx context.Context) error {
 		TableName:   aws.String(sdb.tipTable),
 		BillingMode: types.BillingModePayPerRequest,
 	}
-	return createTable(ctx, sdb.logger, sdb.client, &createTableInput)
+	return utils.CreateTable(ctx, sdb.client, &createTableInput)
 }
 
 func (sdb *StateDatabase) GetCheckpoint(ctx context.Context, ckptType models.CheckpointType) (time.Time, error) {
@@ -254,11 +256,11 @@ func (sdb *StateDatabase) UpdateTip(ctx context.Context, newTip *models.StreamTi
 				oldTip,
 				func(options *attributevalue.DecoderOptions) {
 					options.DecodeTime = attributevalue.DecodeTimeAttributes{
-						S: tsDecode,
-						N: tsDecode,
+						S: utils.TsDecode,
+						N: utils.TsDecode,
 					}
 				}); err != nil {
-				sdb.logger.Errorf("error unmarshaling old tip: %v", err)
+				sdb.logger.Errorf("error unmarshalling old tip: %v", err)
 				// We've written the new tip and lost the previous tip here. This means that we won't be able to mark
 				// the old tip REPLACED. As a result, the old tip will get anchored along with the new tip, causing the
 				// new tip to be rejected in Ceramic via conflict resolution. While not ideal, this is no worse than

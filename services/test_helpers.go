@@ -11,7 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/3box/pipeline-tools/cd/manager"
+	"github.com/3box/pipeline-tools/cd/manager/common/job"
 
 	"github.com/ceramicnetwork/go-cas/models"
 )
@@ -100,24 +100,24 @@ func (m *MockStateRepository) UpdateTip(_ context.Context, newTip *models.Stream
 }
 
 type MockJobRepository struct {
-	jobStore  map[string]*manager.JobState
+	jobStore  map[string]*job.JobState
 	failCount int
 }
 
 func (m *MockJobRepository) CreateJob(_ context.Context) (string, error) {
 	if m.jobStore == nil {
-		m.jobStore = make(map[string]*manager.JobState, 1)
+		m.jobStore = make(map[string]*job.JobState, 1)
 	}
 	if m.failCount > 0 {
 		m.failCount--
 		return "", fmt.Errorf("failed to create job")
 	}
-	newJob := models.NewJob(manager.JobType_Anchor, nil)
+	newJob := models.NewJob(job.JobType_Anchor, nil)
 	m.jobStore[newJob.Job] = &newJob
 	return newJob.Job, nil
 }
 
-func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*manager.JobState, error) {
+func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*job.JobState, error) {
 	if jobState, found := m.jobStore[id]; found {
 		return jobState, nil
 	}
@@ -127,7 +127,7 @@ func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*manager.Job
 func (m *MockJobRepository) finishJobs(count int) {
 	for _, js := range m.jobStore {
 		if count > 0 {
-			js.Stage = manager.JobStage_Completed
+			js.Stage = job.JobStage_Completed
 			count--
 		}
 	}

@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/3box/pipeline-tools/cd/manager"
+	"github.com/3box/pipeline-tools/cd/manager/common/job"
 )
 
 const DeployComponent = "casv5"
@@ -23,10 +23,10 @@ const (
 	AnchorAppMode_ContinualAnchoring = "continual-anchoring"
 )
 
-func NewJob(jobType manager.JobType, params map[string]interface{}) manager.JobState {
-	return manager.JobState{
+func NewJob(jobType job.JobType, params map[string]interface{}) job.JobState {
+	return job.JobState{
 		Job:    uuid.New().String(),
-		Stage:  manager.JobStage_Queued,
+		Stage:  job.JobStage_Queued,
 		Type:   jobType,
 		Ts:     time.Now(),
 		Params: params,

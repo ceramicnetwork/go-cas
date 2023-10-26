@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/3box/pipeline-tools/cd/manager"
+	"github.com/3box/pipeline-tools/cd/manager/common/job"
 )
 
 type AnchorRepository interface {
@@ -23,7 +23,7 @@ type StateRepository interface {
 
 type JobRepository interface {
 	CreateJob(ctx context.Context) (string, error)
-	QueryJob(ctx context.Context, id string) (*manager.JobState, error)
+	QueryJob(ctx context.Context, id string) (*job.JobState, error)
 }
 
 type QueuePublisher interface {
