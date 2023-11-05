@@ -81,12 +81,12 @@ func (p RequestPoller) Run(ctx context.Context) {
 			if err != nil {
 				p.logger.Errorf("error loading requests: %v", err)
 			} else if len(anchorReqs) > 0 {
-				p.logger.Debugf("found %d requests newer than %s", len(anchorReqs), startCheckpoint)
+				p.logger.Debugf("%d requests found since %s: %v", len(anchorReqs), startCheckpoint, anchorReqs)
 				// Send an alert because we shouldn't have found any old unprocessed requests
 				err = p.notif.SendAlert(
 					models.AlertTitle,
 					models.AlertDesc_Unprocessed,
-					fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint, endCheckpoint),
+					fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint),
 				)
 				if err != nil {
 					p.logger.Errorf("error sending alert: %v", err)
