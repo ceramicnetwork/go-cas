@@ -205,7 +205,7 @@ services:
       - --miner.blockTime=5
       - --mnemonic='move sense much taxi wave hurry recall stairs thank brother nut woman'
       - --networkId=5777
-      - --hostname=0.0.0.0
+      - --server.host=0.0.0.0
       - -l=80000000
     networks:
       - internal
