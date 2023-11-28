@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
@@ -19,12 +20,16 @@ func TestStatus(t *testing.T) {
 		statusRequestStr      string
 		allowedSourceStatuses []models.RequestStatus
 		shouldError           bool
+		expectedIngress       int
+		expectedUpdate        int
 	}{
 		"update status in db": {
 			anchorDb:              &MockAnchorRepository{},
 			statusRequestStr:      string(replacedStatus),
 			allowedSourceStatuses: []models.RequestStatus{models.RequestStatus_Pending},
 			shouldError:           false,
+			expectedIngress:       1,
+			expectedUpdate:        1,
 		},
 		"return error for invalid request without updating db": {
 			anchorDb:         &MockAnchorRepository{},
@@ -35,12 +40,16 @@ func TestStatus(t *testing.T) {
 			anchorDb:         &MockAnchorRepository{shouldFailUpdate: true},
 			statusRequestStr: string(replacedStatus),
 			shouldError:      true,
+			expectedIngress:  1,
 		},
 	}
 
+	logger := loggers.NewTestLogger()
+
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			statusService := NewStatusService(test.anchorDb)
+			metricService := &MockMetricService{}
+			statusService := NewStatusService(test.anchorDb, metricService, logger)
 			if err := statusService.Status(context.Background(), test.statusRequestStr); err != nil && !test.shouldError {
 				t.Errorf("unexpected error received %v", err)
 			} else if err == nil && test.shouldError {
@@ -61,6 +70,8 @@ func TestStatus(t *testing.T) {
 					t.Errorf("disallowed source status found: found=%v, expected=%v", statusUpd.allowedSourceStatuses, test.allowedSourceStatuses)
 				}
 			}
+			Assert(t, test.expectedIngress, metricService.counts[models.MetricName_StatusIngressMessage], "Incorrect status ingress message count")
+			Assert(t, test.expectedUpdate, metricService.counts[models.MetricName_StatusUpdated], "Incorrect status updated count")
 		})
 	}
 }
