@@ -9,7 +9,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const pollTick = 5 * time.Minute
+const pollTick = time.Hour
 const dbLoadLimit = 1000
 
 // Only look for unprocessed requests as far back as 2 days
@@ -81,7 +81,10 @@ func (p RequestPoller) Run(ctx context.Context) {
 			if err != nil {
 				p.logger.Errorf("error loading requests: %v", err)
 			} else if len(anchorReqs) > 0 {
-				p.logger.Debugf("%d requests found since %s: %v", len(anchorReqs), startCheckpoint, anchorReqs)
+				p.logger.Debugw(
+					fmt.Sprintf("%d unprocessed requests since last checkpoint at %s", len(anchorReqs), startCheckpoint),
+					"reqs", anchorReqs,
+				)
 				// Send an alert because we shouldn't have found any old unprocessed requests
 				err = p.notif.SendAlert(
 					models.AlertTitle,

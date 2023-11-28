@@ -11,10 +11,11 @@ import (
 type FailureHandlingService struct {
 	notif         models.Notifier
 	metricService models.MetricService
+	logger        models.Logger
 }
 
-func NewFailureHandlingService(notif models.Notifier, metricService models.MetricService) *FailureHandlingService {
-	return &FailureHandlingService{notif, metricService}
+func NewFailureHandlingService(notif models.Notifier, metricService models.MetricService, logger models.Logger) *FailureHandlingService {
+	return &FailureHandlingService{notif, metricService, logger}
 }
 
 func (f FailureHandlingService) Failure(ctx context.Context, _ string) error {
@@ -30,10 +31,16 @@ func (f FailureHandlingService) DLQ(ctx context.Context, msgBody string) error {
 	anchorReq := new(models.AnchorRequestMessage)
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err == nil {
 		msgType = "Anchor request"
+		f.logger.Debugw("dlq: dequeued",
+			msgType, anchorReq,
+		)
 	} else {
 		batchReq := new(models.AnchorBatchMessage)
 		if err = json.Unmarshal([]byte(msgBody), batchReq); err == nil {
 			msgType = "Batch request"
+			f.logger.Debugw("dlq: dequeued",
+				msgType, batchReq,
+			)
 		}
 	}
 	text, _ := json.MarshalIndent(msgBody, "", "")
