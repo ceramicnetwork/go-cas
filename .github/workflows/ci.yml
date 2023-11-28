@@ -79,6 +79,7 @@ jobs:
           AWS_REGION: us-east-1
       -
         name: Push public image
+        if: ${{ env.PUBLISH == 'true' }}
         run: |
           docker buildx build --load -t 3box/go-cas .
           docker tag 3box/go-cas:latest public.ecr.aws/r5b3e0r5/3box/go-cas:latest

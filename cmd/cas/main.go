@@ -209,7 +209,7 @@ func main() {
 	failureConsumer := queue.NewConsumer(logger, failureQueue, failureHandlingService.Failure, nil)
 
 	// The Status service reads from the Status queue and updates the Anchor DB
-	statusService := services.NewStatusService(anchorDb, logger)
+	statusService := services.NewStatusService(anchorDb, metricService, logger)
 	statusConsumer := queue.NewConsumer(logger, statusQueue, statusService.Status, nil)
 
 	// The Batching service reads from the Ready queue and posts to the Batch queue
