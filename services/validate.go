@@ -59,7 +59,6 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	v.metricService.Count(ctx, models.MetricName_ValidateIngressRequest, 1)
 	v.logger.Debugw("validate: dequeued",
 		"req", anchorReq,
-		"tip", newTip,
 	)
 	if storedTip, oldTip, err := v.stateDb.UpdateTip(ctx, newTip); err != nil {
 		v.logger.Errorf("error storing tip: %v, %v", anchorReq, err)
@@ -108,9 +107,14 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 		if _, err = v.readyPublisher.SendMessage(ctx, anchorReq); err != nil {
 			v.logger.Errorf("error sending ready message: %v, %v", anchorReq, err)
 			return err
+		} else {
+			v.metricService.Count(ctx, models.MetricName_ValidateProcessedRequest, 1)
+			v.logger.Debugw("validate: processed",
+				"req", anchorReq,
+			)
+			return nil
 		}
 	}
-	return nil
 }
 
 func (v ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {

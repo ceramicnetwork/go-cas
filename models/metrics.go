@@ -13,6 +13,7 @@ const (
 	MetricName_StatusUpdated              MetricName = "status_updated"
 	MetricName_ValidateIngressRequest     MetricName = "validate_ingress_request"
 	MetricName_ValidateReplacedRequest    MetricName = "validate_replaced_request"
+	MetricName_ValidateProcessedRequest   MetricName = "validate_processed_request"
 	MetricName_ValidateReprocessedRequest MetricName = "validate_reprocessed_request"
 	MetricName_WorkerJobCreated           MetricName = "worker_job_created"
 )

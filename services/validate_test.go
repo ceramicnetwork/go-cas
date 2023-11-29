@@ -32,6 +32,7 @@ func TestPublishNewTip(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 
 	t.Run("publish request and replace old tip", func(t *testing.T) {
@@ -62,6 +63,7 @@ func TestPublishNewTip(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 }
 
@@ -89,6 +91,7 @@ func TestPublishOldTip(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 }
 
@@ -114,6 +117,7 @@ func TestReprocessTips(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 
 	t.Run("publish reprocessed request if tip exists but cid does not", func(t *testing.T) {
@@ -132,6 +136,7 @@ func TestReprocessTips(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 }
 
@@ -156,6 +161,7 @@ func TestCidExists(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 
 	t.Run("replace tip if cid exists", func(t *testing.T) {
@@ -174,6 +180,7 @@ func TestCidExists(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 
 	t.Run("replace newer and older tips if cid exists", func(t *testing.T) {
@@ -196,6 +203,7 @@ func TestCidExists(t *testing.T) {
 		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
 		Assert(t, 0, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
 		Assert(t, 2, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
 	})
 }
 
