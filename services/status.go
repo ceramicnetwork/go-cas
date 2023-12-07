@@ -8,11 +8,13 @@ import (
 )
 
 type StatusService struct {
-	anchorDb models.AnchorRepository
+	anchorDb      models.AnchorRepository
+	metricService models.MetricService
+	logger        models.Logger
 }
 
-func NewStatusService(anchorDb models.AnchorRepository) *StatusService {
-	return &StatusService{anchorDb}
+func NewStatusService(anchorDb models.AnchorRepository, metricService models.MetricService, logger models.Logger) *StatusService {
+	return &StatusService{anchorDb, metricService, logger}
 }
 
 func (s StatusService) Status(ctx context.Context, msgBody string) error {
@@ -20,6 +22,10 @@ func (s StatusService) Status(ctx context.Context, msgBody string) error {
 	if err := json.Unmarshal([]byte(msgBody), statusMsg); err != nil {
 		return err
 	} else {
+		s.metricService.Count(ctx, models.MetricName_StatusIngressMessage, 1)
+		s.logger.Debugw("status: dequeued",
+			"msg", statusMsg,
+		)
 		var allowedSourceStatuses []models.RequestStatus
 		switch statusMsg.Status {
 		case models.RequestStatus_Replaced:
@@ -29,6 +35,10 @@ func (s StatusService) Status(ctx context.Context, msgBody string) error {
 		if err = s.anchorDb.UpdateStatus(ctx, statusMsg.Id, statusMsg.Status, allowedSourceStatuses); err != nil {
 			return err
 		}
+		s.metricService.Count(ctx, models.MetricName_StatusUpdated, 1)
+		s.logger.Debugw("status: updated",
+			"msg", statusMsg,
+		)
 	}
 	return nil
 }

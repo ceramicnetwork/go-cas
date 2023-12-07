@@ -221,12 +221,12 @@ func main() {
 	// also maintaining backpressure on the queues.
 
 	// The Failure handling service reads from the Failure and Dead-Letter queues
-	failureHandlingService := services.NewFailureHandlingService(discordHandler, metricService)
+	failureHandlingService := services.NewFailureHandlingService(discordHandler, metricService, logger)
 	dlqConsumer := queue.NewConsumer(logger, deadLetterQueue, failureHandlingService.DLQ, nil)
 	failureConsumer := queue.NewConsumer(logger, failureQueue, failureHandlingService.Failure, nil)
 
 	// The Status service reads from the Status queue and updates the Anchor DB
-	statusService := services.NewStatusService(anchorDb)
+	statusService := services.NewStatusService(anchorDb, metricService, logger)
 	statusConsumer := queue.NewConsumer(logger, statusQueue, statusService.Status, nil)
 
 	// The IPFS service reads from the IPFS queue and puts or publishes

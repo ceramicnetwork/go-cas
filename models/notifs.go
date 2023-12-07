@@ -9,5 +9,5 @@ const (
 
 const (
 	AlertFmt_DeadLetterQueue string = "%s:\n%s"
-	AlertFmt_Unprocessed     string = "%d requests found between:\n%s\n%s"
+	AlertFmt_Unprocessed     string = "%d requests found since:\n%s"
 )

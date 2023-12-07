@@ -3,27 +3,29 @@ package services
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const pollTick = 5 * time.Minute
+const pollTick = time.Hour
 const dbLoadLimit = 1000
 
 // Only look for unprocessed requests as far back as 2 days
-const startCheckpointDelta = -48 * time.Hour
+const startCheckpointDelta = 48 * time.Hour
 
 // Only look for unprocessed requests older than 12 hours
-const endCheckpointDelta = -12 * time.Hour
+const defaultEndCheckpointDelta = 12 * time.Hour
 
 type RequestPoller struct {
-	anchorDb          models.AnchorRepository
-	stateDb           models.StateRepository
-	validatePublisher models.QueuePublisher
-	logger            models.Logger
-	notif             models.Notifier
-	tick              time.Duration
+	anchorDb           models.AnchorRepository
+	stateDb            models.StateRepository
+	validatePublisher  models.QueuePublisher
+	logger             models.Logger
+	notif              models.Notifier
+	tick               time.Duration
+	endCheckpointDelta time.Duration
 }
 
 func NewRequestPoller(
@@ -33,13 +35,20 @@ func NewRequestPoller(
 	validatePublisher models.QueuePublisher,
 	notif models.Notifier,
 ) *RequestPoller {
+	endCheckpointDelta := defaultEndCheckpointDelta
+	if configEndCheckpointDelta, found := os.LookupEnv("POLL_END_CHECKPOINT_DELTA"); found {
+		if parsedEndCheckpointDelta, err := time.ParseDuration(configEndCheckpointDelta); err == nil {
+			endCheckpointDelta = parsedEndCheckpointDelta
+		}
+	}
 	return &RequestPoller{
-		anchorDb:          anchorDb,
-		stateDb:           stateDb,
-		validatePublisher: validatePublisher,
-		logger:            logger,
-		notif:             notif,
-		tick:              pollTick,
+		anchorDb:           anchorDb,
+		stateDb:            stateDb,
+		validatePublisher:  validatePublisher,
+		logger:             logger,
+		notif:              notif,
+		tick:               pollTick,
+		endCheckpointDelta: endCheckpointDelta,
 	}
 }
 
@@ -50,7 +59,7 @@ func (p RequestPoller) Run(ctx context.Context) {
 		p.logger.Fatalf("error querying checkpoint: %v", err)
 	}
 
-	startCheckpoint := time.Now().UTC().Add(startCheckpointDelta)
+	startCheckpoint := time.Now().UTC().Add(-startCheckpointDelta)
 	if prevCheckpoint.After(startCheckpoint) {
 		startCheckpoint = prevCheckpoint
 	}
@@ -61,7 +70,7 @@ func (p RequestPoller) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			endCheckpoint := time.Now().UTC().Add(endCheckpointDelta)
+			endCheckpoint := time.Now().UTC().Add(-p.endCheckpointDelta)
 			anchorReqs, err := p.anchorDb.GetRequests(
 				ctx,
 				models.RequestStatus_Pending,
@@ -72,12 +81,15 @@ func (p RequestPoller) Run(ctx context.Context) {
 			if err != nil {
 				p.logger.Errorf("error loading requests: %v", err)
 			} else if len(anchorReqs) > 0 {
-				p.logger.Debugf("found %d requests newer than %s", len(anchorReqs), startCheckpoint)
+				p.logger.Debugw(
+					fmt.Sprintf("%d unprocessed requests since last checkpoint at %s", len(anchorReqs), startCheckpoint),
+					"reqs", anchorReqs,
+				)
 				// Send an alert because we shouldn't have found any old unprocessed requests
 				err = p.notif.SendAlert(
 					models.AlertTitle,
 					models.AlertDesc_Unprocessed,
-					fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint, endCheckpoint),
+					fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint),
 				)
 				if err != nil {
 					p.logger.Errorf("error sending alert: %v", err)
