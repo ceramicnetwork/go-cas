@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	iface "github.com/ipfs/boxo/coreiface"
 	"github.com/ipfs/kubo/core"
 	ipfsMock "github.com/ipfs/kubo/core/mock"
 	mocknet "github.com/libp2p/go-libp2p/p2p/net/mock"
@@ -61,7 +60,7 @@ func TestPubsub(t *testing.T) {
 			metricService := &MockMetricService{}
 			ipfsService := NewIpfsService(logger, metricService)
 			ipfsInstance := ipfs.NewIpfsApiWithCore(logger, "test", mockCoreApi, metricService)
-			ipfsService.ipfsInstances = []iface.CoreAPI{ipfsInstance}
+			ipfsService.ipfsInstances = []models.IpfsApi{ipfsInstance}
 
 			encodedMsg, err := json.Marshal(test.Msg)
 			if err != nil {
@@ -110,7 +109,7 @@ func TestIPFSUnsupportedTask(t *testing.T) {
 	defer mockNode.Close()
 	mockCoreApi := NewMockIpfsCoreApi(mockNode)
 	ipfsInstance := ipfs.NewIpfsApiWithCore(logger, "test", mockCoreApi, metricService)
-	ipfsService.ipfsInstances = []iface.CoreAPI{ipfsInstance}
+	ipfsService.ipfsInstances = []models.IpfsApi{ipfsInstance}
 
 	encodedMsg, err := json.Marshal(struct {
 		Name   string
@@ -150,7 +149,7 @@ func TestIPFSRoundRobin(t *testing.T) {
 	ipfsInstance2 := ipfs.NewIpfsApiWithCore(logger, "test", mockCoreApi2, metricService)
 	mockCoreApi3 := NewMockIpfsCoreApi(mockNode)
 	ipfsInstance3 := ipfs.NewIpfsApiWithCore(logger, "test", mockCoreApi3, metricService)
-	ipfsService.ipfsInstances = []iface.CoreAPI{ipfsInstance1, ipfsInstance2, ipfsInstance3}
+	ipfsService.ipfsInstances = []models.IpfsApi{ipfsInstance1, ipfsInstance2, ipfsInstance3}
 
 	encodedMsg, err := json.Marshal(models.IpfsPubsubPublishMessage{
 		CreatedAt: time.Now(),

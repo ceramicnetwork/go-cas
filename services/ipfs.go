@@ -9,17 +9,16 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-playground/validator"
+
 	"github.com/ceramicnetwork/go-cas/common/ipfs"
 	"github.com/ceramicnetwork/go-cas/models"
-
-	"github.com/go-playground/validator"
-	iface "github.com/ipfs/boxo/coreiface"
 )
 
 type IpfsService struct {
 	metricService models.MetricService
 	logger        models.Logger
-	ipfsInstances []iface.CoreAPI
+	ipfsInstances []models.IpfsApi
 	next          uint32
 	validator     *validator.Validate
 }
@@ -36,7 +35,7 @@ func NewIpfsService(logger models.Logger, metricService models.MetricService) *I
 		parsedIpfsStrAddress := strings.Split(configIpfsStrAddresses, " ")
 		ipfsStrAddresses = parsedIpfsStrAddress
 	}
-	var ipfsInstances []iface.CoreAPI
+	var ipfsInstances []models.IpfsApi
 	for _, strAddr := range ipfsStrAddresses {
 		ipfsApi := ipfs.NewIpfsApi(logger, strAddr, metricService)
 
@@ -63,7 +62,7 @@ func (i *IpfsService) Run(ctx context.Context, msgBody string) error {
 			expiration := pubsubPublishArgs.CreatedAt.Add(time.Minute)
 			ctxWithDeadline, cancel := context.WithDeadline(ctx, expiration)
 			defer cancel()
-			err := ipfsInstance.PubSub().Publish(ctxWithDeadline, pubsubPublishArgs.Topic, pubsubPublishArgs.Data)
+			err := ipfsInstance.Publish(ctxWithDeadline, pubsubPublishArgs.Topic, pubsubPublishArgs.Data)
 			return err
 		}
 	}
