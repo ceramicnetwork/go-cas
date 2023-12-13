@@ -2,6 +2,7 @@ package ipfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,12 +18,7 @@ import (
 const defaultIpfsRateLimit = 16
 const defaultIpfsBurstLimit = 16
 const defaultIpfsLimiterMaxQueueDepth = 100
-const defaultIpfsPublishPubsubTimeoutS = 30
-
-type PubSubPublishTask struct {
-	Topic string
-	Data  []byte
-}
+const defaultIpfsPublishPubsubTimeoutS = 30 * time.Second
 
 type IpfsApi struct {
 	core            iface.CoreAPI
@@ -60,8 +56,8 @@ func NewIpfsApi(logger models.Logger, multiAddressStr string, metricService mode
 }
 
 func (i *IpfsApi) Publish(ctx context.Context, topic string, data []byte) error {
-	if _, err := i.limiter.Submit(ctx, PubSubPublishTask{Topic: topic, Data: data}); err != nil {
-		if ctx.Err() != nil {
+	if _, err := i.limiter.Submit(ctx, models.PubSubPublishTask{Topic: topic, Data: data}); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			i.metricService.Count(ctx, models.MetricName_IpfsPubsubPublishExpired, 1)
 			return nil
 		}
@@ -71,29 +67,39 @@ func (i *IpfsApi) Publish(ctx context.Context, topic string, data []byte) error 
 	return nil
 }
 
-func (i *IpfsApi) limiterRunFunction(ctx context.Context, task any) (any, error) {
-	var ipfsError error
-	var result any
-	if pubsubPublishTask, ok := task.(PubSubPublishTask); ok {
-		// set a default timeout
-		ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(time.Second*time.Duration(defaultIpfsPublishPubsubTimeoutS)))
-		defer cancel()
+func (i *IpfsApi) pubsubPublish(ctx context.Context, task models.PubSubPublishTask) error {
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(defaultIpfsPublishPubsubTimeoutS))
+	defer cancel()
 
-		i.logger.Debugf("publishing %v to ipfs pubsub on ipfs %v", pubsubPublishTask, i.multiAddressStr)
-		if err := i.core.PubSub().Publish(ctxWithTimeout, pubsubPublishTask.Topic, pubsubPublishTask.Data); err != nil {
-			ipfsError = fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %v", i.multiAddressStr, err)
-		}
-	} else {
-		return result, fmt.Errorf("unknown ipfs task received %v", task)
+	i.logger.Debugf("publishing %v to ipfs pubsub on ipfs %v", task, i.multiAddressStr)
+	if err := i.core.PubSub().Publish(ctxWithTimeout, task.Topic, task.Data); err != nil {
+		return fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %w", i.multiAddressStr, err)
+	}
+	return nil
+}
+
+func (i *IpfsApi) processIpfsTask(ctx context.Context, task any) (any, error) {
+	var result any
+	if pubsubPublishTask, ok := task.(models.PubSubPublishTask); ok {
+		err := i.pubsubPublish(ctx, pubsubPublishTask)
+		return nil, err
 	}
 
-	if ipfsError != nil {
+	return result, fmt.Errorf("unknown ipfs task received %v", task)
+
+}
+
+func (i *IpfsApi) limiterRunFunction(ctx context.Context, task any) (any, error) {
+	result, err := i.processIpfsTask(ctx, task)
+
+	if err != nil {
+		i.logger.Errorf("IPFS error for task %v on ipfs %v", task, i.multiAddressStr)
 		i.metricService.Count(ctx, models.MetricName_IpfsError, 1)
 
 		// TODO: if we get many timeout errors, adjust the limiter values
 		// TODO: restart the ipfs instance if there are too many errors and mark unavailable
-		return result, ipfsError
+		return result, err
 	}
 
-	return result, ipfsError
+	return result, err
 }
