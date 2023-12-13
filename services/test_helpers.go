@@ -11,6 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
+	iface "github.com/ipfs/boxo/coreiface"
+	"github.com/ipfs/kubo/core"
+	"github.com/ipfs/kubo/core/coreapi"
+
 	"github.com/3box/pipeline-tools/cd/manager/common/job"
 
 	"github.com/ceramicnetwork/go-cas/models"
@@ -238,3 +242,33 @@ func Assert(t *testing.T, expected any, received any, message string) {
 type MockNotifier struct{}
 
 func (n MockNotifier) SendAlert(string, string, string) error { return nil }
+
+type MockPubsubApi struct {
+	iface.PubSubAPI
+	publishedMessages []models.IpfsPubsubPublishMessage
+}
+
+func (p *MockPubsubApi) Publish(ctx context.Context, topic string, data []byte) error {
+	select {
+	case <-ctx.Done():
+		return fmt.Errorf("timed out while publishing")
+	default:
+		p.publishedMessages = append(p.publishedMessages, models.IpfsPubsubPublishMessage{CreatedAt: time.Now(), Topic: topic, Data: data})
+		return nil
+	}
+}
+
+type MockIpfsCoreApi struct {
+	iface.CoreAPI
+	pubsubApi MockPubsubApi
+}
+
+func NewMockIpfsCoreApi(node *core.IpfsNode) *MockIpfsCoreApi {
+	api, _ := coreapi.NewCoreAPI(node)
+
+	return &MockIpfsCoreApi{CoreAPI: api, pubsubApi: MockPubsubApi{PubSubAPI: api.PubSub()}}
+}
+
+func (i *MockIpfsCoreApi) PubSub() iface.PubSubAPI {
+	return &i.pubsubApi
+}
