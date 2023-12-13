@@ -78,28 +78,21 @@ func (i *IpfsApi) pubsubPublish(ctx context.Context, task models.PubSubPublishTa
 	return nil
 }
 
-func (i *IpfsApi) processIpfsTask(ctx context.Context, task any) (any, error) {
-	var result any
+func (i *IpfsApi) processIpfsTask(ctx context.Context, task any) error {
 	if pubsubPublishTask, ok := task.(models.PubSubPublishTask); ok {
-		err := i.pubsubPublish(ctx, pubsubPublishTask)
-		return nil, err
+		return i.pubsubPublish(ctx, pubsubPublishTask)
 	}
-
-	return result, fmt.Errorf("unknown ipfs task received %v", task)
-
+	return fmt.Errorf("unknown ipfs task received %v", task)
 }
 
 func (i *IpfsApi) limiterRunFunction(ctx context.Context, task any) (any, error) {
-	result, err := i.processIpfsTask(ctx, task)
-
-	if err != nil {
+	if err := i.processIpfsTask(ctx, task); err != nil {
 		i.logger.Errorf("IPFS error for task %v on ipfs %v", task, i.multiAddressStr)
 		i.metricService.Count(ctx, models.MetricName_IpfsError, 1)
-
 		// TODO: if we get many timeout errors, adjust the limiter values
 		// TODO: restart the ipfs instance if there are too many errors and mark unavailable
-		return result, err
+		return nil, err
 	}
 
-	return result, err
+	return nil, nil
 }
