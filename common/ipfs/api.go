@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"time"
 
 	"github.com/abevier/tsk/ratelimiter"
@@ -41,18 +43,40 @@ func NewIpfsApiWithCore(logger models.Logger, multiAddressStr string, coreApi if
 	return &ipfs
 }
 
-func NewIpfsApi(logger models.Logger, multiAddressStr string, metricService models.MetricService) *IpfsApi {
-	addr, err := ma.NewMultiaddr(multiAddressStr)
-	if err != nil {
-		logger.Fatalf("Error creating multiaddress for %s: %v", multiAddressStr, err)
+func parseAddress(addrStr string) (ma.Multiaddr, error) {
+	if addr, err := ma.NewMultiaddr(addrStr); err == nil {
+		return addr, nil
 	}
 
-	coreApi, err := rpc.NewApi(addr)
+	u, err := url.Parse(addrStr)
 	if err != nil {
-		logger.Fatalf("Error creating ipfs client at %s: %v", multiAddressStr, err)
+		return nil, fmt.Errorf("invalid address %s given: %w", addrStr, err)
 	}
 
-	return NewIpfsApiWithCore(logger, multiAddressStr, coreApi, metricService)
+	host, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return nil, fmt.Errorf("invalid address %s given: %w", addrStr, err)
+	}
+
+	if addr, err := ma.NewMultiaddr(fmt.Sprintf("/dns4/%s/tcp/%s", host, port)); err != nil {
+		return nil, fmt.Errorf("unable to get valid multiaddr from %s: %w", addrStr, err)
+	} else {
+		return addr, nil
+	}
+}
+
+func NewIpfsApi(logger models.Logger, addrStr string, metricService models.MetricService) *IpfsApi {
+	multiaddr, err := parseAddress(addrStr)
+	if err != nil {
+		logger.Fatalf("Error creating multiaddress for %s: %v", addrStr, err)
+	}
+
+	coreApi, err := rpc.NewApi(multiaddr)
+	if err != nil {
+		logger.Fatalf("Error creating ipfs client at %s: %v", multiaddr.String(), err)
+	}
+
+	return NewIpfsApiWithCore(logger, multiaddr.String(), coreApi, metricService)
 }
 
 func (i *IpfsApi) Publish(ctx context.Context, topic string, data []byte) error {
