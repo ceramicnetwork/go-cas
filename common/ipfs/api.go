@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/abevier/tsk/ratelimiter"
@@ -21,15 +22,38 @@ const defaultIpfsLimiterMaxQueueDepth = 100
 const defaultIpfsPublishPubsubTimeoutS = 30 * time.Second
 
 type IpfsApi struct {
-	core            iface.CoreAPI
-	logger          models.Logger
-	multiAddressStr string
-	metricService   models.MetricService
-	limiter         *ratelimiter.RateLimiter[any, any]
+	core          iface.CoreAPI
+	logger        models.Logger
+	addrStr       string
+	metricService models.MetricService
+	limiter       *ratelimiter.RateLimiter[any, any]
 }
 
-func NewIpfsApiWithCore(logger models.Logger, multiAddressStr string, coreApi iface.CoreAPI, metricService models.MetricService) *IpfsApi {
-	ipfs := IpfsApi{core: coreApi, logger: logger, multiAddressStr: multiAddressStr, metricService: metricService}
+func createCoreApi(addrStr string) (*rpc.HttpApi, error) {
+	addr, err := ma.NewMultiaddr(addrStr)
+	if err != nil {
+		c := &http.Client{
+			Transport: &http.Transport{
+				Proxy:             http.ProxyFromEnvironment,
+				DisableKeepAlives: true,
+			},
+		}
+		coreApi, err := rpc.NewURLApiWithClient(addrStr, c)
+		if err != nil {
+			return nil, err
+		}
+		return coreApi, nil
+	}
+
+	coreApi, err := rpc.NewApi(addr)
+	if err != nil {
+		return nil, err
+	}
+	return coreApi, nil
+}
+
+func NewIpfsApiWithCore(logger models.Logger, addrStr string, coreApi iface.CoreAPI, metricService models.MetricService) *IpfsApi {
+	ipfs := IpfsApi{core: coreApi, logger: logger, addrStr: addrStr, metricService: metricService}
 	limiterOpts := ratelimiter.Opts{
 		Limit:             defaultIpfsRateLimit,
 		Burst:             defaultIpfsBurstLimit,
@@ -41,18 +65,13 @@ func NewIpfsApiWithCore(logger models.Logger, multiAddressStr string, coreApi if
 	return &ipfs
 }
 
-func NewIpfsApi(logger models.Logger, multiAddressStr string, metricService models.MetricService) *IpfsApi {
-	addr, err := ma.NewMultiaddr(multiAddressStr)
+func NewIpfsApi(logger models.Logger, addrStr string, metricService models.MetricService) *IpfsApi {
+	coreApi, err := createCoreApi(addrStr)
 	if err != nil {
-		logger.Fatalf("Error creating multiaddress for %s: %v", multiAddressStr, err)
+		logger.Fatalf("Error creating ipfs client at %s: %v", addrStr, err)
 	}
 
-	coreApi, err := rpc.NewApi(addr)
-	if err != nil {
-		logger.Fatalf("Error creating ipfs client at %s: %v", multiAddressStr, err)
-	}
-
-	return NewIpfsApiWithCore(logger, multiAddressStr, coreApi, metricService)
+	return NewIpfsApiWithCore(logger, addrStr, coreApi, metricService)
 }
 
 func (i *IpfsApi) Publish(ctx context.Context, topic string, data []byte) error {
@@ -71,9 +90,9 @@ func (i *IpfsApi) pubsubPublish(ctx context.Context, task models.PubSubPublishTa
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(defaultIpfsPublishPubsubTimeoutS))
 	defer cancel()
 
-	i.logger.Debugf("publishing %v to ipfs pubsub on ipfs %v", task, i.multiAddressStr)
+	i.logger.Debugf("publishing %v to ipfs pubsub on ipfs %v", task, i.addrStr)
 	if err := i.core.PubSub().Publish(ctxWithTimeout, task.Topic, task.Data); err != nil {
-		return fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %w", i.multiAddressStr, err)
+		return fmt.Errorf("publishing message to pubsub failed on ipfs instance at %s: %w", i.addrStr, err)
 	}
 	return nil
 }
@@ -87,7 +106,7 @@ func (i *IpfsApi) processIpfsTask(ctx context.Context, task any) error {
 
 func (i *IpfsApi) limiterRunFunction(ctx context.Context, task any) (any, error) {
 	if err := i.processIpfsTask(ctx, task); err != nil {
-		i.logger.Errorf("IPFS error for task %v on ipfs %v: %w", task, i.multiAddressStr, err)
+		i.logger.Errorf("IPFS error for task %v on ipfs %v: %w", task, i.addrStr, err)
 		i.metricService.Count(ctx, models.MetricName_IpfsError, 1)
 		// TODO: if we get many timeout errors, adjust the limiter values
 		// TODO: restart the ipfs instance if there are too many errors and mark unavailable
