@@ -31,7 +31,7 @@ func NewIpfsService(logger models.Logger, metricService models.MetricService) *I
 	}
 
 	ipfsStrAddresses := []string{"/ip4/127.0.0.1/tcp/5011"}
-	if configIpfsStrAddresses, found := os.LookupEnv("IPFS_MULTIADDRESSES"); found {
+	if configIpfsStrAddresses, found := os.LookupEnv("IPFS_ADDRESSES"); found {
 		parsedIpfsStrAddress := strings.Split(configIpfsStrAddresses, " ")
 		ipfsStrAddresses = parsedIpfsStrAddress
 	}
