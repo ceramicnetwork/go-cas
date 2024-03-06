@@ -9,7 +9,7 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
-const pollTick = time.Hour
+const defaultPollTick = time.Hour
 const dbLoadLimit = 1000
 
 // Only look for unprocessed requests as far back as 2 days
@@ -39,6 +39,12 @@ func NewRequestPoller(
 	if configEndCheckpointDelta, found := os.LookupEnv("POLL_END_CHECKPOINT_DELTA"); found {
 		if parsedEndCheckpointDelta, err := time.ParseDuration(configEndCheckpointDelta); err == nil {
 			endCheckpointDelta = parsedEndCheckpointDelta
+		}
+	}
+	pollTick := defaultPollTick
+	if configPollTick, found := os.LookupEnv("POLL_TICK"); found {
+		if parsedPollTick, err := time.ParseDuration(configPollTick); err == nil {
+			pollTick = parsedPollTick
 		}
 	}
 	return &RequestPoller{
