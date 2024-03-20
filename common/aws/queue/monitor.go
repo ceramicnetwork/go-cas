@@ -8,6 +8,8 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+var _ models.QueueMonitor = &Monitor{}
+
 type Monitor struct {
 	queueUrl string
 	client   *sqs.Client

@@ -2,8 +2,8 @@ package models
 
 import "time"
 
-const DefaultAnchorBatchSize = 1024
-const DefaultAnchorBatchLinger = 12 * time.Hour
+const DefaultAnchorBatchSize = 1048576 // 2^20
+const DefaultAnchorBatchLinger = time.Hour
 
 const (
 	Env_AnchorAuditEnabled    = "ANCHOR_AUDIT_ENABLED"

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -13,12 +14,14 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
+	"github.com/ceramicnetwork/go-cas/common/aws/storage"
 	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/common/metrics"
@@ -53,9 +56,11 @@ func main() {
 	// HTTP clients
 	dynamoDbClient := dynamodb.NewFromConfig(awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)
+	s3Client := s3.NewFromConfig(awsCfg)
 
 	stateDb := ddb.NewStateDb(serverCtx, logger, dynamoDbClient)
 	jobDb := ddb.NewJobDb(serverCtx, logger, dynamoDbClient)
+	batchStore := storage.NewS3Store(logger, s3Client)
 
 	discordHandler, err := notifs.NewDiscordHandler(logger)
 	if err != nil {
@@ -67,54 +72,88 @@ func main() {
 		logger.Fatalf("error creating metric service: %v", err)
 	}
 
-	// Queue publishers
 	var visibilityTimeout *time.Duration = nil
 	if configVisibilityTimeout, found := os.LookupEnv("QUEUE_VISIBILITY_TIMEOUT"); found {
 		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
 			visibilityTimeout = &parsedVisibilityTimeout
 		}
 	}
-	// Create the DLQ and prepare the redrive policy for the other queues
-	deadLetterQueue, err := queue.NewPublisher(
+
+	// TODO: Rename queues/services as per the flow below
+	// Ref: https://linear.app/3boxlabs/issue/WS1-1586/rename-queuesservices-for-better-readability
+	//
+	// Data flow through the queues and services:
+	// - CAS API posts to the StreamConsolidate queue.
+	// - The StreamConsolidation service reads from the StreamConsolidate queue and posts to the ReadyRequest queue(s)
+	//   or RequestStatus queue (when a request needs to be marked "Replaced" for some reason).
+	// - The RequestBatching service reads from the ReadyRequest queue(s) and collects them into a batch, which it then posts to the
+	//   RequestBatch queue. For the duration that the RequestBatching service holds the requests it is batching, it will
+	//   keep the SQS messages corresponding to these requests in-flight.
+	// - Anchor workers read from the RequestBatch queue and anchor the requests.
+	// - The RequestBatch queue is also monitored by the Worker service, which spawns workers to process the batch(es).
+	// - The RequestStatus service reads from the RequestStatus queue and updates the Anchor DB.
+	// - The Failure handling service reads from the Failure and Dead-Letter queues and posts alerts to Discord.
+
+	// Set up all the services first, so we can create the queues and configure their callbacks. After that, we'll plumb
+	// the queues to the right services and start them.
+	//
+	// The Failure handling service reads from the Failure and Dead-Letter queues
+	failureHandlingService := services.NewFailureHandlingService(discordHandler, metricService, logger)
+	// The Validation service reads from the Validate queue and posts to the Ready and Status queues
+	validationService := services.NewValidationService(stateDb, metricService, logger)
+	// The Batching service reads from the Ready queue(s) and posts to the Batch queue.
+	batchingService := services.NewBatchingService(serverCtx, batchStore, metricService, logger)
+	// The Status service reads from the Status queue and updates the Anchor DB
+	statusService := services.NewStatusService(anchorDb, metricService, logger)
+
+	// Now create all the queues.
+	//
+	// Create the DLQ and prepare the redrive options for the other queues
+	deadLetterQueue, dlqId, err := queue.NewQueue(
 		serverCtx,
+		metricService,
+		logger,
 		sqsClient,
-		queue.PublisherOpts{QueueType: queue.QueueType_DLQ, VisibilityTimeout: visibilityTimeout},
+		queue.Opts{QueueType: queue.Type_DLQ, VisibilityTimeout: visibilityTimeout},
+		failureHandlingService.DLQ,
 	)
 	if err != nil {
 		logger.Fatalf("error creating dead-letter queue: %v", err)
 	}
-	dlqArn, err := queue.GetQueueArn(serverCtx, deadLetterQueue.GetUrl(), sqsClient)
-	if err != nil {
-		logger.Fatalf("error fetching dead-letter queue arn: %v", err)
-	}
-	redrivePolicy := &queue.QueueRedrivePolicy{
-		DeadLetterTargetArn: dlqArn,
-		MaxReceiveCount:     queue.DefaultMaxReceiveCount,
+	redriveOpts := &queue.RedriveOpts{
+		DlqId:           dlqId,
+		MaxReceiveCount: queue.DefaultMaxReceiveCount,
 	}
 	// Failure queue
 	// TODO: Could this become recursive since the failure handler also consumes from the DLQ? The inability to handle
 	// failures could put messages back in the DLQ that are then re-consumed by the handler.
-	failureQueue, err := queue.NewPublisher(
+	failureQueue, _, err := queue.NewQueue(
 		serverCtx,
+		metricService,
+		logger,
 		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_Failure,
+		queue.Opts{
+			QueueType:         queue.Type_Failure,
 			VisibilityTimeout: visibilityTimeout,
-			RedrivePolicy:     redrivePolicy,
+			RedriveOpts:       redriveOpts,
 		},
+		failureHandlingService.Failure,
 	)
 	if err != nil {
 		logger.Fatalf("error creating failure queue: %v", err)
 	}
 	// Validate queue
-	validateQueue, err := queue.NewPublisher(
+	validateQueue, _, err := queue.NewQueue(
 		serverCtx,
+		metricService,
+		logger,
 		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_Validate,
+		queue.Opts{
+			QueueType:         queue.Type_Validate,
 			VisibilityTimeout: visibilityTimeout,
-			RedrivePolicy:     redrivePolicy,
+			RedriveOpts:       redriveOpts,
 		},
+		validationService.Validate,
 	)
 	if err != nil {
 		logger.Fatalf("error creating validate queue: %v", err)
@@ -122,135 +161,98 @@ func main() {
 	// The Ready and Batch queues will need larger visibility timeouts than the other queues. Requests pulled from the
 	// Ready queue will remain in flight for the batch linger duration. Batches from the Batch queue will remain in
 	// flight as long as it takes for them to get anchored.
+	//
 	// These queues will thus allow a smaller maximum receive count before messages fall through to the DLQ. Detecting
 	// failures is harder given the longer visibility timeouts, so it's important that they be detected as soon as
 	// possible.
-	longQueueVisibilityTimeout := visibilityTimeout
-	if configVisibilityTimeout, found := os.LookupEnv("LONG_QUEUE_VISIBILITY_TIMEOUT"); found {
-		if parsedVisibilityTimeout, err := time.ParseDuration(configVisibilityTimeout); err == nil {
-			longQueueVisibilityTimeout = &parsedVisibilityTimeout
+	anchorBatchLinger := models.DefaultAnchorBatchLinger
+	if configAnchorBatchLinger, found := os.LookupEnv("ANCHOR_BATCH_LINGER"); found {
+		if parsedAnchorBatchLinger, err := time.ParseDuration(configAnchorBatchLinger); err == nil {
+			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-	longQueueMaxReceiveCount := redrivePolicy.MaxReceiveCount
+	// Add one hour to the anchor batch linger to get the long queue visibility timeout
+	longQueueVisibilityTimeout := anchorBatchLinger + time.Hour
+	longQueueMaxReceiveCount := redriveOpts.MaxReceiveCount
 	if configMaxReceiveCount, found := os.LookupEnv("LONG_QUEUE_MAX_RECEIVE_COUNT"); found {
 		if parsedMaxReceiveCount, err := strconv.Atoi(configMaxReceiveCount); err == nil {
 			longQueueMaxReceiveCount = parsedMaxReceiveCount
 		}
 	}
-	longQueueRedrivePolicy := &queue.QueueRedrivePolicy{
-		DeadLetterTargetArn: dlqArn,
-		MaxReceiveCount:     longQueueMaxReceiveCount,
+	longQueueRedriveOpts := &queue.RedriveOpts{
+		DlqId:           dlqId,
+		MaxReceiveCount: longQueueMaxReceiveCount,
 	}
-	readyQueue, err := queue.NewPublisher(
-		serverCtx,
-		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_Ready,
-			VisibilityTimeout: longQueueVisibilityTimeout,
-			RedrivePolicy:     longQueueRedrivePolicy,
-		},
-	)
-	if err != nil {
-		logger.Fatalf("error creating ready queue: %v", err)
-	}
-	batchQueue, err := queue.NewPublisher(
-		serverCtx,
-		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_Batch,
-			VisibilityTimeout: longQueueVisibilityTimeout,
-			RedrivePolicy:     longQueueRedrivePolicy,
-		},
-	)
-	if err != nil {
-		logger.Fatalf("error creating batch queue: %v", err)
-	}
-	// Status queue
-	statusQueue, err := queue.NewPublisher(
-		serverCtx,
-		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_Status,
-			VisibilityTimeout: visibilityTimeout,
-			RedrivePolicy:     redrivePolicy,
-		},
-	)
-	if err != nil {
-		logger.Fatalf("error creating status queue: %v", err)
-	}
-
-	// ipfs queue
-	ipfsQueue, err := queue.NewPublisher(
-		serverCtx,
-		sqsClient,
-		queue.PublisherOpts{
-			QueueType:         queue.QueueType_IPFS,
-			VisibilityTimeout: visibilityTimeout,
-			RedrivePolicy:     redrivePolicy,
-		},
-	)
-	if err != nil {
-		logger.Fatalf("error creating ipfs queue: %v", err)
-	}
-
-	// Create utilization gauges for all the queues
-	if err = metricService.QueueGauge(serverCtx, deadLetterQueue.GetName(), queue.NewMonitor(deadLetterQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("error creating gauge for dead-letter queue: %v", err)
-	}
-	if err = metricService.QueueGauge(serverCtx, failureQueue.GetName(), queue.NewMonitor(failureQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("error creating gauge for failure queue: %v", err)
-	}
-	if err = metricService.QueueGauge(serverCtx, validateQueue.GetName(), queue.NewMonitor(validateQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("error creating gauge for validate queue: %v", err)
-	}
-	if err = metricService.QueueGauge(serverCtx, readyQueue.GetName(), queue.NewMonitor(readyQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("error creating gauge for ready queue: %v", err)
-	}
-	batchMonitor := queue.NewMonitor(batchQueue.GetUrl(), sqsClient)
-	if err = metricService.QueueGauge(serverCtx, batchQueue.GetName(), batchMonitor); err != nil {
-		logger.Fatalf("error creating gauge for batch queue: %v", err)
-	}
-	if err = metricService.QueueGauge(serverCtx, statusQueue.GetName(), queue.NewMonitor(statusQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("error creating gauge for status queue: %v", err)
-	}
-	if err = metricService.QueueGauge(serverCtx, ipfsQueue.GetName(), queue.NewMonitor(ipfsQueue.GetUrl(), sqsClient)); err != nil {
-		logger.Fatalf("error creating gauge for ipfs queue: %v", err)
-	}
-
-	// Create the queue consumers. These consumers will be responsible for scaling event processing up based on load and
-	// also maintaining backpressure on the queues.
-
-	// The Failure handling service reads from the Failure and Dead-Letter queues
-	failureHandlingService := services.NewFailureHandlingService(discordHandler, metricService, logger)
-	dlqConsumer := queue.NewConsumer(logger, deadLetterQueue, failureHandlingService.DLQ, nil)
-	failureConsumer := queue.NewConsumer(logger, failureQueue, failureHandlingService.Failure, nil)
-
-	// The Status service reads from the Status queue and updates the Anchor DB
-	statusService := services.NewStatusService(anchorDb, metricService, logger)
-	statusConsumer := queue.NewConsumer(logger, statusQueue, statusService.Status, nil)
-
-	// The IPFS service reads from the IPFS queue and puts or publishes
-	ipfsService := services.NewIpfsService(logger, metricService)
-	ipfsConsumer := queue.NewConsumer(logger, ipfsQueue, ipfsService.Run, nil)
-
-	// The Batching service reads from the Ready queue and posts to the Batch queue
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
 			anchorBatchSize = parsedAnchorBatchSize
 		}
 	}
+	// Ready queue
+	//
+	// Create a minimum of 10 Ready queue publishers, or as many needed to process an anchor batch while keeping each
+	// queue below the maximum number of inflight SQS messages (120,000).
+	numReadyPublishers := int(math.Max(10, float64(anchorBatchSize/120_000)))
+	readyQueue, err := queue.NewMultiQueue(
+		serverCtx,
+		metricService,
+		logger,
+		sqsClient,
+		queue.Opts{
+			QueueType:         queue.Type_Ready,
+			VisibilityTimeout: &longQueueVisibilityTimeout,
+			RedriveOpts:       longQueueRedriveOpts,
+		},
+		batchingService.Batch,
+		numReadyPublishers,
+	)
+	if err != nil {
+		logger.Fatalf("error creating ready queue: %v", err)
+	}
+	// Batch queue
+	//
 	// Launch a number of workers greater than the batch size. This prevents a small number of workers from waiting on
 	// an incomplete batch to fill up because there aren't any workers available to add to the batch even when messages
 	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
 	// and processed in parallel.
 	maxBatchQueueWorkers := anchorBatchSize * 2
-	batchingService := services.NewBatchingService(serverCtx, logger, batchQueue, metricService)
-	batchingConsumer := queue.NewConsumer(logger, readyQueue, batchingService.Batch, &maxBatchQueueWorkers)
+	batchQueue, _, err := queue.NewQueue(
+		serverCtx,
+		metricService,
+		logger,
+		sqsClient,
+		queue.Opts{
+			QueueType:         queue.Type_Batch,
+			VisibilityTimeout: &longQueueVisibilityTimeout,
+			RedriveOpts:       longQueueRedriveOpts,
+			NumWorkers:        &maxBatchQueueWorkers,
+		},
+		batchingService.Batch,
+	)
+	if err != nil {
+		logger.Fatalf("error creating batch queue: %v", err)
+	}
+	// Status queue
+	statusQueue, _, err := queue.NewQueue(
+		serverCtx,
+		metricService,
+		logger,
+		sqsClient,
+		queue.Opts{
+			QueueType:         queue.Type_Status,
+			VisibilityTimeout: visibilityTimeout,
+			RedriveOpts:       redriveOpts,
+		},
+		statusService.Status,
+	)
+	if err != nil {
+		logger.Fatalf("error creating status queue: %v", err)
+	}
 
-	// The Validation service reads from the Validate queue and posts to the Ready and Status queues
-	validationService := services.NewValidationService(logger, stateDb, readyQueue, statusQueue, metricService)
-	validationConsumer := queue.NewConsumer(logger, validateQueue, validationService.Validate, nil)
+	// Wire up the queues and services, then start the services.
+	validationService.Start(readyQueue.Publisher(), statusQueue.Publisher())
+	batchingService.Start(batchQueue.Publisher())
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -270,7 +272,7 @@ func main() {
 		//  - status updates
 		//  - failure handling
 		//  - DLQ
-		validationConsumer.Shutdown()
+		validateQueue.Shutdown()
 
 		// The Batching service needs a special shutdown procedure:
 		//  - Start shutting down the queue consumer, which will prevent any new receive requests from being initiated.
@@ -282,20 +284,19 @@ func main() {
 		batchWg.Add(2)
 		go func() {
 			defer batchWg.Done()
-			batchingConsumer.Shutdown()
+			batchQueue.Shutdown()
 		}()
 		go func() {
 			defer batchWg.Done()
-			batchingConsumer.WaitForRxShutdown()
+			batchQueue.WaitForRxShutdown()
 			time.Sleep(5 * time.Second)
 			batchingService.Flush()
 		}()
 		batchWg.Wait()
 
-		statusConsumer.Shutdown()
-		ipfsConsumer.Shutdown()
-		failureConsumer.Shutdown()
-		dlqConsumer.Shutdown()
+		statusQueue.Shutdown()
+		failureQueue.Shutdown()
+		deadLetterQueue.Shutdown()
 
 		// Flush metrics
 		metricService.Shutdown(serverCtx)
@@ -310,15 +311,14 @@ func main() {
 	go func() {
 		defer wg.Done()
 		// Monitor the Batch queue and spawn anchor workers accordingly
-		services.NewWorkerService(logger, batchMonitor, jobDb, metricService).Run(serverCtx)
+		services.NewWorkerService(logger, batchQueue.Monitor(), jobDb, metricService).Run(serverCtx)
 	}()
 
-	dlqConsumer.Start()
-	failureConsumer.Start()
-	statusConsumer.Start()
-	ipfsConsumer.Start()
-	batchingConsumer.Start()
-	validationConsumer.Start()
+	deadLetterQueue.Start()
+	failureQueue.Start()
+	statusQueue.Start()
+	batchQueue.Start()
+	validateQueue.Start()
 
 	if configAnchorAuditEnabled, found := os.LookupEnv(models.Env_AnchorAuditEnabled); found {
 		if anchorAuditEnabled, err := strconv.ParseBool(configAnchorAuditEnabled); (err == nil) && anchorAuditEnabled {
@@ -326,7 +326,7 @@ func main() {
 			go func() {
 				defer wg.Done()
 				// Enable auditing of the anchor DB to check for pending anchor requests that might have been missed
-				services.NewRequestPoller(logger, anchorDb, stateDb, validateQueue, discordHandler).Run(serverCtx)
+				services.NewRequestPoller(logger, anchorDb, stateDb, validateQueue.Publisher(), discordHandler).Run(serverCtx)
 			}()
 		}
 	}

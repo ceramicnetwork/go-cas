@@ -18,6 +18,8 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+var _ models.MetricService = &OtlMetricService{}
+
 type OtlMetricService struct {
 	caller        string
 	meterProvider *sdk.MeterProvider

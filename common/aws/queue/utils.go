@@ -16,40 +16,48 @@ import (
 	"github.com/ceramicnetwork/go-cas/common"
 )
 
-type QueueType string
+type Type string
 
 const (
-	QueueType_Validate QueueType = "validate"
-	QueueType_Ready    QueueType = "ready"
-	QueueType_Batch    QueueType = "batch"
-	QueueType_Status   QueueType = "status"
-	QueueType_Failure  QueueType = "failure"
-	QueueType_DLQ      QueueType = "dlq"
-	QueueType_IPFS     QueueType = "ipfs"
+	Type_Validate Type = "validate"
+	Type_Ready    Type = "ready"
+	Type_Batch    Type = "batch"
+	Type_Status   Type = "status"
+	Type_Failure  Type = "failure"
+	Type_DLQ      Type = "dlq"
+	Type_IPFS     Type = "ipfs"
 )
 
 const defaultVisibilityTimeout = 5 * time.Minute
 const DefaultMaxReceiveCount = 3
 
-type QueueRedrivePolicy struct {
+type redrivePolicy struct {
 	DeadLetterTargetArn string `json:"deadLetterTargetArn"`
 	MaxReceiveCount     int    `json:"maxReceiveCount"`
 }
 
-func CreateQueue(ctx context.Context, sqsClient *sqs.Client, opts PublisherOpts) (string, error) {
+func CreateQueue(ctx context.Context, sqsClient *sqs.Client, opts Opts, index int) (string, string, string, error) {
 	visibilityTimeout := defaultVisibilityTimeout
 	if opts.VisibilityTimeout != nil {
 		visibilityTimeout = *opts.VisibilityTimeout
 	}
+	// Append a non-zero index to the queue name if specified
+	name := queueName(opts.QueueType)
+	if index > 0 {
+		name = fmt.Sprintf("%s-%d", name, index)
+	}
 	createQueueIn := sqs.CreateQueueInput{
-		QueueName: aws.String(queueName(opts.QueueType)),
+		QueueName: aws.String(name),
 		Attributes: map[string]string{
 			string(types.QueueAttributeNameVisibilityTimeout): strconv.Itoa(int(visibilityTimeout.Seconds())),
 		},
 	}
 	// Configure redrive policy, if specified.
-	if opts.RedrivePolicy != nil && len(opts.RedrivePolicy.DeadLetterTargetArn) > 0 && opts.RedrivePolicy.MaxReceiveCount > 0 {
-		marshaledRedrivePolicy, _ := json.Marshal(opts.RedrivePolicy)
+	if opts.RedriveOpts != nil && len(opts.RedriveOpts.DlqId) > 0 && opts.RedriveOpts.MaxReceiveCount > 0 {
+		marshaledRedrivePolicy, _ := json.Marshal(redrivePolicy{
+			DeadLetterTargetArn: opts.RedriveOpts.DlqId,
+			MaxReceiveCount:     opts.RedriveOpts.MaxReceiveCount,
+		})
 		createQueueIn.Attributes[string(types.QueueAttributeNameRedrivePolicy)] = string(marshaledRedrivePolicy)
 	}
 
@@ -57,9 +65,11 @@ func CreateQueue(ctx context.Context, sqsClient *sqs.Client, opts PublisherOpts)
 	defer httpCancel()
 
 	if createQueueOut, err := sqsClient.CreateQueue(httpCtx, &createQueueIn); err != nil {
-		return "", err
+		return "", "", "", err
+	} else if arn, err := getQueueArn(ctx, *createQueueOut.QueueUrl, sqsClient); err != nil {
+		return "", "", "", err
 	} else {
-		return *createQueueOut.QueueUrl, nil
+		return *createQueueOut.QueueUrl, arn, name, nil
 	}
 }
 
@@ -80,22 +90,7 @@ func GetQueueUtilization(ctx context.Context, queueUrl string, sqsClient *sqs.Cl
 	return 0, 0, nil
 }
 
-func GetQueueUrl(ctx context.Context, queueType QueueType, sqsClient *sqs.Client) (string, error) {
-	getQueueUrlIn := sqs.GetQueueUrlInput{
-		QueueName: aws.String(queueName(queueType)),
-	}
-
-	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
-	defer httpCancel()
-
-	if getQueueUrlOut, err := sqsClient.GetQueueUrl(httpCtx, &getQueueUrlIn); err != nil {
-		return "", nil
-	} else {
-		return *getQueueUrlOut.QueueUrl, nil
-	}
-}
-
-func GetQueueArn(ctx context.Context, queueUrl string, sqsClient *sqs.Client) (string, error) {
+func getQueueArn(ctx context.Context, queueUrl string, sqsClient *sqs.Client) (string, error) {
 	if queueAttr, err := getQueueAttributes(ctx, queueUrl, sqsClient); err != nil {
 		return "", err
 	} else {
@@ -119,6 +114,6 @@ func getQueueAttributes(ctx context.Context, queueUrl string, sqsClient *sqs.Cli
 	}
 }
 
-func queueName(queueType QueueType) string {
+func queueName(queueType Type) string {
 	return fmt.Sprintf("cas-anchor-%s-%s", os.Getenv(cas.Env_Env), string(queueType))
 }

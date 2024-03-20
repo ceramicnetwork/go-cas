@@ -15,13 +15,23 @@ type ValidationService struct {
 	statusPublisher models.QueuePublisher
 	metricService   models.MetricService
 	logger          models.Logger
+	initialized     bool
 }
 
-func NewValidationService(logger models.Logger, stateDb models.StateRepository, readyPublisher models.QueuePublisher, statusPublisher models.QueuePublisher, metricService models.MetricService) *ValidationService {
-	return &ValidationService{stateDb, readyPublisher, statusPublisher, metricService, logger}
+func NewValidationService(stateDb models.StateRepository, metricService models.MetricService, logger models.Logger) *ValidationService {
+	return &ValidationService{stateDb, nil, nil, metricService, logger, false}
+}
+
+func (v ValidationService) Start(readyPublisher models.QueuePublisher, statusPublisher models.QueuePublisher) {
+	v.readyPublisher = readyPublisher
+	v.statusPublisher = statusPublisher
+	v.initialized = true
 }
 
 func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
+	if !v.initialized {
+		v.logger.Fatalf("validation service not initialized")
+	}
 	anchorReq := new(models.AnchorRequestMessage)
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err != nil {
 		return err

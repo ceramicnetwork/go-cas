@@ -117,8 +117,8 @@ func (m *MockJobRepository) CreateJob(_ context.Context) (string, error) {
 		return "", fmt.Errorf("failed to create job")
 	}
 	newJob := models.NewJob(job.JobType_Anchor, nil)
-	m.jobStore[newJob.Job] = &newJob
-	return newJob.Job, nil
+	m.jobStore[newJob.JobId] = &newJob
+	return newJob.JobId, nil
 }
 
 func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*job.JobState, error) {
