@@ -60,61 +60,65 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	v.logger.Debugw("validate: dequeued",
 		"req", anchorReq,
 	)
-	if storedTip, oldTip, err := v.stateDb.UpdateTip(ctx, newTip); err != nil {
+	storedTip, oldTip, err := v.stateDb.UpdateTip(ctx, newTip)
+	if err != nil {
 		v.logger.Errorf("error storing tip: %v, %v", anchorReq, err)
 		return err
-	} else if !storedTip {
+	}
+	// Having the same request ID means that a newer tip failed to get completely processed previously, or that we got
+	// a duplicate request.
+	isReprocessedTip := (oldTip != nil) && (oldTip.Id == newTip.Id)
+	if !isReprocessedTip {
 		// Mark the current request REPLACED because we found a newer stream/origin timestamp in the DB
-		v.metricService.Count(ctx, models.MetricName_ValidateReplacedRequest, 1)
-		v.logger.Debugw("validate: replaced",
-			"req", anchorReq,
-		)
-		return v.sendStatusMsg(ctx, anchorReq.Id, models.RequestStatus_Replaced)
-	} else {
-		// Having the same request ID means that a newer tip failed to get completely processed previously
-		isReprocessedTip := (oldTip != nil) && (oldTip.Id == newTip.Id)
-		if isReprocessedTip {
-			v.metricService.Count(ctx, models.MetricName_ValidateReprocessedRequest, 1)
-			v.logger.Debugw("validate: reprocessed",
-				"req", anchorReq,
-			)
-		}
-		// Only mark the old tip REPLACED if it actually was an older tip and not just the same tip retried
-		if (oldTip != nil) && !isReprocessedTip {
-			requestId, _ := uuid.Parse(oldTip.Id)
-			v.metricService.Count(ctx, models.MetricName_ValidateReplacedRequest, 1)
-			v.logger.Debugw("validate: replaced",
-				"req", anchorReq,
-			)
-			if err = v.sendStatusMsg(ctx, requestId, models.RequestStatus_Replaced); err != nil {
-				return err
-			}
-		}
-		if storedCid, err := v.stateDb.StoreCid(ctx, streamCid); err != nil {
-			v.logger.Errorf("error storing cid: %v, %v", anchorReq, err)
-			return err
-		} else if !storedCid && !isReprocessedTip {
-			// Mark the current request REPLACED if we found the stream/CID in the DB and this was not a reprocessed
-			// tip. A reprocessed request's stream/CID might already have been stored in the DB, and we don't want to
-			// skip this request because we know it wasn't fully processed the last time it came through.
+		if !storedTip {
 			v.metricService.Count(ctx, models.MetricName_ValidateReplacedRequest, 1)
 			v.logger.Debugw("validate: replaced",
 				"req", anchorReq,
 			)
 			return v.sendStatusMsg(ctx, anchorReq.Id, models.RequestStatus_Replaced)
-		} else
-		// This request has been fully de-duplicated so send it to the next stage
-		if _, err = v.readyPublisher.SendMessage(ctx, anchorReq); err != nil {
-			v.logger.Errorf("error sending ready message: %v, %v", anchorReq, err)
-			return err
-		} else {
-			v.metricService.Count(ctx, models.MetricName_ValidateProcessedRequest, 1)
-			v.logger.Debugw("validate: processed",
-				"req", anchorReq,
-			)
-			return nil
 		}
+		// Mark the old tip from the DB REPLACED because the current request has a newer stream/origin timestamp
+		if oldTip != nil {
+			requestId, _ := uuid.Parse(oldTip.Id)
+			v.metricService.Count(ctx, models.MetricName_ValidateReplacedRequest, 1)
+			v.logger.Debugw("validate: replaced",
+				"old tip", oldTip,
+			)
+			if err = v.sendStatusMsg(ctx, requestId, models.RequestStatus_Replaced); err != nil {
+				return err
+			}
+		}
+	} else {
+		v.metricService.Count(ctx, models.MetricName_ValidateReprocessedRequest, 1)
+		v.logger.Debugw("validate: reprocessed",
+			"req", anchorReq,
+		)
 	}
+	storedCid, err := v.stateDb.StoreCid(ctx, streamCid)
+	if err != nil {
+		v.logger.Errorf("error storing cid: %v, %v", anchorReq, err)
+		return err
+	}
+	if !storedCid && !isReprocessedTip {
+		// Mark the current request REPLACED if we found the stream/CID in the DB and this was not a reprocessed
+		// tip. A reprocessed request's stream/CID might already have been stored in the DB, and we don't want to
+		// skip this request because we know it wasn't fully processed the last time it came through.
+		v.metricService.Count(ctx, models.MetricName_ValidateReplacedRequest, 1)
+		v.logger.Debugw("validate: replaced",
+			"req", anchorReq,
+		)
+		return v.sendStatusMsg(ctx, anchorReq.Id, models.RequestStatus_Replaced)
+	}
+	// This request has been fully de-duplicated so send it to the next stage
+	if _, err = v.readyPublisher.SendMessage(ctx, anchorReq); err != nil {
+		v.logger.Errorf("error sending ready message: %v, %v", anchorReq, err)
+		return err
+	}
+	v.metricService.Count(ctx, models.MetricName_ValidateProcessedRequest, 1)
+	v.logger.Debugw("validate: processed",
+		"req", anchorReq,
+	)
+	return nil
 }
 
 func (v ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {

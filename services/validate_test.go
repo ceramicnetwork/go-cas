@@ -14,7 +14,13 @@ import (
 )
 
 func TestPublishNewTip(t *testing.T) {
-	anchorRequest, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	anchorRequest, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(
+		uuid.New(),
+		"streamId",
+		"cid",
+		"origin",
+		time.Now().Round(0).UTC(),
+	)
 	testCtx := context.Background()
 	logger := loggers.NewTestLogger()
 
@@ -36,7 +42,13 @@ func TestPublishNewTip(t *testing.T) {
 	})
 
 	t.Run("publish request and replace old tip", func(t *testing.T) {
-		newAnchorRequest, newEncodedRequest, _, _, _ := generateTestData(uuid.New(), "streamId", "newCid", "origin", time.Millisecond)
+		newAnchorRequest, newEncodedRequest, _, _, _ := generateTestData(
+			uuid.New(),
+			"streamId",
+			"newCid",
+			"origin",
+			time.Now().Round(0).Add(time.Millisecond).UTC(),
+		)
 
 		stateRepo := &MockStateRepository{}
 		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
@@ -68,12 +80,24 @@ func TestPublishNewTip(t *testing.T) {
 }
 
 func TestPublishOldTip(t *testing.T) {
-	_, _, streamTip, streamCid, _ := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	_, _, streamTip, streamCid, _ := generateTestData(
+		uuid.New(),
+		"streamId",
+		"cid",
+		"origin",
+		time.Now().Round(0).UTC(),
+	)
 	testCtx := context.Background()
 	logger := loggers.NewTestLogger()
 
 	t.Run("do not publish request if tip is older", func(t *testing.T) {
-		_, oldEncodedRequest, _, _, newStatusMessage := generateTestData(uuid.New(), "streamId", "newCid", "origin", -time.Millisecond)
+		_, oldEncodedRequest, _, _, newStatusMessage := generateTestData(
+			uuid.New(),
+			"streamId",
+			"newCid",
+			"origin",
+			time.Now().Round(0).Add(-time.Millisecond).UTC(),
+		)
 
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 1)}
@@ -96,7 +120,13 @@ func TestPublishOldTip(t *testing.T) {
 }
 
 func TestReprocessTips(t *testing.T) {
-	anchorRequest, encodedRequest, streamTip, streamCid, _ := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	anchorRequest, encodedRequest, streamTip, streamCid, _ := generateTestData(
+		uuid.New(),
+		"streamId",
+		"cid",
+		"origin",
+		time.Now().Round(0).UTC(),
+	)
 	testCtx := context.Background()
 	logger := loggers.NewTestLogger()
 
@@ -107,6 +137,54 @@ func TestReprocessTips(t *testing.T) {
 
 		stateRepo.UpdateTip(testCtx, streamTip)
 		stateRepo.StoreCid(testCtx, streamCid)
+
+		validatorService := NewValidationService(logger, stateRepo, readyPublisher, nil, metricService)
+		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
+		testAnchorRequest(t, receivedMessage, anchorRequest)
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
+	})
+
+	// This should never happen, but it's a good test case to have.
+	t.Run("publish reprocessed request if request id is the same but timestamp is old", func(t *testing.T) {
+		stateRepo := &MockStateRepository{}
+		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
+
+		stateRepo.UpdateTip(testCtx, streamTip)
+		stateRepo.StoreCid(testCtx, streamCid)
+
+		reprocessedAnchorRequest, reprocessedEncodedRequest, _, _, _ := generateTestData(
+			anchorRequest.Id,
+			"streamId",
+			"cid",
+			"origin",
+			streamTip.Timestamp.Round(0).Add(-time.Millisecond).UTC(),
+		)
+
+		validatorService := NewValidationService(logger, stateRepo, readyPublisher, nil, metricService)
+		if err := validatorService.Validate(testCtx, reprocessedEncodedRequest); err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		receivedMessage := waitForMesssages(readyPublisher.messages, 1)[0]
+		testAnchorRequest(t, receivedMessage, reprocessedAnchorRequest)
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateIngressRequest], "Incorrect ingress request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateReprocessedRequest], "Incorrect reprocessed request count")
+		Assert(t, 0, metricService.counts[models.MetricName_ValidateReplacedRequest], "Incorrect replaced request count")
+		Assert(t, 1, metricService.counts[models.MetricName_ValidateProcessedRequest], "Incorrect processed request count")
+	})
+
+	t.Run("publish reprocessed request if tip exists but cid does not", func(t *testing.T) {
+		stateRepo := &MockStateRepository{}
+		readyPublisher := &MockPublisher{messages: make(chan any, 1)}
+		metricService := &MockMetricService{}
+
+		stateRepo.UpdateTip(testCtx, streamTip)
 
 		validatorService := NewValidationService(logger, stateRepo, readyPublisher, nil, metricService)
 		if err := validatorService.Validate(testCtx, encodedRequest); err != nil {
@@ -141,7 +219,13 @@ func TestReprocessTips(t *testing.T) {
 }
 
 func TestCidExists(t *testing.T) {
-	_, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", 0)
+	_, encodedRequest, streamTip, streamCid, statusMessage := generateTestData(
+		uuid.New(),
+		"streamId",
+		"cid",
+		"origin",
+		time.Now().Round(0).UTC(),
+	)
 	testCtx := context.Background()
 	logger := loggers.NewTestLogger()
 
@@ -184,7 +268,13 @@ func TestCidExists(t *testing.T) {
 	})
 
 	t.Run("replace newer and older tips if cid exists", func(t *testing.T) {
-		_, newEncodedRequest, _, _, newStatusMessage := generateTestData(uuid.New(), "streamId", "cid", "origin", time.Millisecond)
+		_, newEncodedRequest, _, _, newStatusMessage := generateTestData(
+			uuid.New(),
+			"streamId",
+			"cid",
+			"origin",
+			time.Now().Round(0).Add(time.Millisecond).UTC(),
+		)
 
 		stateRepo := &MockStateRepository{}
 		statusPublisher := &MockPublisher{messages: make(chan any, 2)}
@@ -227,15 +317,14 @@ func testStatusMessage(t *testing.T, testMessage any, testStatus *models.Request
 	}
 }
 
-func generateTestData(id uuid.UUID, streamId, cid, origin string, delta time.Duration) (*models.AnchorRequestMessage, string, *models.StreamTip, *models.StreamCid, *models.RequestStatusMessage) {
-	now := time.Now().Round(0).Add(delta).UTC()
+func generateTestData(id uuid.UUID, streamId, cid, origin string, t time.Time) (*models.AnchorRequestMessage, string, *models.StreamTip, *models.StreamCid, *models.RequestStatusMessage) {
 	anchorRequest := &models.AnchorRequestMessage{
 		Id:        id,
 		StreamId:  streamId,
 		Cid:       cid,
 		Origin:    origin,
-		Timestamp: now,
-		CreatedAt: now,
+		Timestamp: t,
+		CreatedAt: t,
 	}
 	encodedRequest, _ := json.Marshal(anchorRequest)
 	return anchorRequest,
