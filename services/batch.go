@@ -97,6 +97,8 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchStored, 1)
 
+	// Send just the batch ID in the message to the queue
+	anchorReqBatch.Ids = nil
 	if _, err := b.batchPublisher.SendMessage(ctx, anchorReqBatch); err != nil {
 		b.logger.Errorf("error sending message: %v, %v", anchorReqBatch.Id, err)
 		return nil, err
