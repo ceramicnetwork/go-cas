@@ -198,6 +198,29 @@ func main() {
 	// Create a minimum of 10 Ready queue publishers, or as many needed to process an anchor batch while keeping each
 	// queue below the maximum number of inflight SQS messages (120,000).
 	numReadyPublishers := int(math.Max(10, float64(anchorBatchSize/120_000)))
+	// The Ready queue is a "multi-queue", which is necessary because of the unconventional way we use it.
+	//
+	// The BatchingService contains logic to "hold" anchor request SQS messages until one of two conditions is
+	// satisfied: either the batch linger duration has run out, or the batch is full. While requests are held this way,
+	// they are considered "in-flight" w.r.t. SQS. Once a batch is formed and recorded, all the messages that comprise
+	// the batch are ACK'd and thus deleted from SQS. If a batch fails to get created, all messages will be NACK'd (if
+	// there is a handled error) or simply not ACK'd (if there is an unhandled error / crash), which will make them
+	// visible to the BatchingService once it recovers/retries.
+	//
+	// This allows SQS to be the persistence for messages flowing through the system versus needing to store batches in
+	// a DB to be able to recover messages in case of a failure. While the latter is doable, it pushes the (non-trivial)
+	// complexity for maintaining batches down to the DB.
+	//
+	// Given this context and the fact that the maximum number of in-flight message a SQS queue can have is 120,000, we
+	// can only have batches of up to 120,000 requests with a single queue. Using a multi-queue allows the
+	// BatchingService to hold a much larger number of anchor requests in-flight, up to 120,000 per sub-queue. This
+	// allows batches to be constructed with virtually any size that we want.
+	//
+	// Because each message is held in-flight till its batch is formed, we need a number of consumer workers greater
+	// than the batch size. This prevents a smaller number of workers from waiting on an incomplete batch to fill up
+	// because there aren't any workers available to add to the batch even when messages are available in the queue. The
+	// 2 multiplier is arbitrary but will allow two batches worth of requests to be read and processed in parallel.
+	maxReadyQueueWorkers := anchorBatchSize * 2
 	readyQueue, err := queue.NewMultiQueue(
 		serverCtx,
 		metricService,
@@ -207,6 +230,7 @@ func main() {
 			QueueType:         queue.Type_Ready,
 			VisibilityTimeout: &longQueueVisibilityTimeout,
 			RedriveOpts:       longQueueRedriveOpts,
+			NumWorkers:        &maxReadyQueueWorkers,
 		},
 		batchingService.Batch,
 		numReadyPublishers,
@@ -215,12 +239,6 @@ func main() {
 		logger.Fatalf("error creating ready queue: %v", err)
 	}
 	// Batch queue
-	//
-	// Launch a number of workers greater than the batch size. This prevents a small number of workers from waiting on
-	// an incomplete batch to fill up because there aren't any workers available to add to the batch even when messages
-	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
-	// and processed in parallel.
-	maxBatchQueueWorkers := anchorBatchSize * 2
 	batchQueue, _, err := queue.NewQueue(
 		serverCtx,
 		metricService,
@@ -230,7 +248,6 @@ func main() {
 			QueueType:         queue.Type_Batch,
 			VisibilityTimeout: &longQueueVisibilityTimeout,
 			RedriveOpts:       longQueueRedriveOpts,
-			NumWorkers:        &maxBatchQueueWorkers,
 		},
 		nil,
 	)
