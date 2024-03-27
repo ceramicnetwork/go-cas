@@ -15,6 +15,8 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+var _ models.Notifier = &DiscordHandler{}
+
 type DiscordColor int
 
 const (

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -17,12 +18,14 @@ import (
 
 type BatchingService struct {
 	batchPublisher models.QueuePublisher
+	batchStore     models.KeyValueRepository
 	batcher        *batch.Executor[*models.AnchorRequestMessage, *uuid.UUID]
 	metricService  models.MetricService
 	logger         models.Logger
+	initialized    bool
 }
 
-func NewBatchingService(ctx context.Context, logger models.Logger, batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
+func NewBatchingService(ctx context.Context, batchStore models.KeyValueRepository, metricService models.MetricService, logger models.Logger) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -35,7 +38,12 @@ func NewBatchingService(ctx context.Context, logger models.Logger, batchPublishe
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-	batchingService := BatchingService{batchPublisher: batchPublisher, metricService: metricService, logger: logger}
+	batchingService := BatchingService{
+		batchStore:    batchStore,
+		metricService: metricService,
+		logger:        logger,
+		initialized:   false,
+	}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
 	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](
 		beOpts,
@@ -47,7 +55,15 @@ func NewBatchingService(ctx context.Context, logger models.Logger, batchPublishe
 	return &batchingService
 }
 
-func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
+func (b *BatchingService) Start(batchPublisher models.QueuePublisher) {
+	b.batchPublisher = batchPublisher
+	b.initialized = true
+}
+
+func (b *BatchingService) Batch(ctx context.Context, msgBody string) error {
+	if !b.initialized {
+		b.logger.Fatalf("batching service not initialized")
+	}
 	anchorReq := new(models.AnchorRequestMessage)
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err != nil {
 		return err
@@ -63,7 +79,7 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 	}
 }
 
-func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
+func (b *BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
 	batchSize := len(anchorReqs)
 	anchorReqBatch := models.AnchorBatchMessage{
 		Id:  uuid.New(),
@@ -74,20 +90,34 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 		anchorReqBatch.Ids[idx] = anchorReq.Id
 		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
 	}
-	if _, err := b.batchPublisher.SendMessage(ctx, anchorReqBatch); err != nil {
-		b.logger.Errorf("error sending message: %v, %v", anchorReqBatch, err)
+
+	// Store the batch to S3 before sending it to the queue
+	key := fmt.Sprintf("cas/anchor/batch/%s", anchorReqBatch.Id.String())
+	if err := b.batchStore.Store(ctx, key, anchorReqBatch); err != nil {
+		b.logger.Errorf("error storing batch: %v, %v", anchorReqBatch.Id, err)
+		return nil, err
+	}
+	b.metricService.Count(ctx, models.MetricName_BatchStored, 1)
+
+	// Send just the batch ID in the message to the queue
+	anchorBatchMessage := models.AnchorBatchMessage{
+		Id:  anchorReqBatch.Id,
+		Ids: []uuid.UUID{},
+	}
+	if _, err := b.batchPublisher.SendMessage(ctx, anchorBatchMessage); err != nil {
+		b.logger.Errorf("error sending message: %v, %v", anchorReqBatch.Id, err)
 		return nil, err
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchCreated, 1)
 	b.metricService.Distribution(ctx, models.MetricName_BatchSize, batchSize)
 	b.logger.Debugw(
 		"batch generated",
-		"batch", anchorReqBatch,
+		"batch", anchorReqBatch.Id,
 	)
 	return batchResults, nil
 }
 
-func (b BatchingService) Flush() {
+func (b *BatchingService) Flush() {
 	// Flush the current batch however far along it's gotten in size or expiration. The caller needs to ensure that no
 	// more messages are sent to this service for processing once this function is called. Receiving more messages will
 	// cause workers to wait till the end of the batch expiration if there aren't enough messages to fill the batch.

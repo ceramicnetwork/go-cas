@@ -15,13 +15,23 @@ type ValidationService struct {
 	statusPublisher models.QueuePublisher
 	metricService   models.MetricService
 	logger          models.Logger
+	initialized     bool
 }
 
-func NewValidationService(logger models.Logger, stateDb models.StateRepository, readyPublisher models.QueuePublisher, statusPublisher models.QueuePublisher, metricService models.MetricService) *ValidationService {
-	return &ValidationService{stateDb, readyPublisher, statusPublisher, metricService, logger}
+func NewValidationService(stateDb models.StateRepository, metricService models.MetricService, logger models.Logger) *ValidationService {
+	return &ValidationService{stateDb, nil, nil, metricService, logger, false}
 }
 
-func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
+func (v *ValidationService) Start(readyPublisher models.QueuePublisher, statusPublisher models.QueuePublisher) {
+	v.readyPublisher = readyPublisher
+	v.statusPublisher = statusPublisher
+	v.initialized = true
+}
+
+func (v *ValidationService) Validate(ctx context.Context, msgBody string) error {
+	if !v.initialized {
+		v.logger.Fatalf("validation service not initialized")
+	}
 	anchorReq := new(models.AnchorRequestMessage)
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err != nil {
 		return err
@@ -117,7 +127,7 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	}
 }
 
-func (v ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {
+func (v *ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {
 	statusMsg := &models.RequestStatusMessage{Id: id, Status: status}
 	if _, err := v.statusPublisher.SendMessage(ctx, statusMsg); err != nil {
 		v.logger.Errorf("error sending status message: %v, %v", statusMsg, err)
