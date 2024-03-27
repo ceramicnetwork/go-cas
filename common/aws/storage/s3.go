@@ -4,12 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
-
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 
-	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
 )
@@ -22,8 +19,11 @@ type S3Store struct {
 	bucket string
 }
 
-func NewS3Store(logger models.Logger, s3Client *s3.Client) *S3Store {
-	bucket := "ceramic-" + os.Getenv(cas.Env_Env) + "-cas"
+func NewS3Store(ctx context.Context, logger models.Logger, s3Client *s3.Client, bucket string) *S3Store {
+	// Create the bucket if it doesn't exist
+	if err := createBucket(ctx, s3Client, bucket); err != nil {
+		logger.Fatalf("failed to create bucket %s: %v", bucket, err)
+	}
 	return &S3Store{s3Client, logger, bucket}
 }
 
@@ -45,6 +45,18 @@ func (s *S3Store) Store(ctx context.Context, key string, value interface{}) erro
 		} else {
 			s.logger.Debugf("stored key: %s", key)
 		}
+	}
+	return nil
+}
+
+func createBucket(ctx context.Context, client *s3.Client, bucket string) error {
+	httpCtx, httpCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
+	defer httpCancel()
+
+	if _, err := client.CreateBucket(httpCtx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucket),
+	}); err != nil {
+		return err
 	}
 	return nil
 }

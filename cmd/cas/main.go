@@ -56,11 +56,15 @@ func main() {
 	// HTTP clients
 	dynamoDbClient := dynamodb.NewFromConfig(awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)
-	s3Client := s3.NewFromConfig(awsCfg)
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
 
 	stateDb := ddb.NewStateDb(serverCtx, logger, dynamoDbClient)
 	jobDb := ddb.NewJobDb(serverCtx, logger, dynamoDbClient)
-	batchStore := storage.NewS3Store(logger, s3Client)
+
+	casBucket := "ceramic-" + os.Getenv(cas.Env_Env) + "-cas"
+	batchStore := storage.NewS3Store(serverCtx, logger, s3Client, casBucket)
 
 	discordHandler, err := notifs.NewDiscordHandler(logger)
 	if err != nil {
@@ -228,7 +232,7 @@ func main() {
 			RedriveOpts:       longQueueRedriveOpts,
 			NumWorkers:        &maxBatchQueueWorkers,
 		},
-		batchingService.Batch,
+		nil,
 	)
 	if err != nil {
 		logger.Fatalf("error creating batch queue: %v", err)
@@ -284,11 +288,11 @@ func main() {
 		batchWg.Add(2)
 		go func() {
 			defer batchWg.Done()
-			batchQueue.Shutdown()
+			readyQueue.Shutdown()
 		}()
 		go func() {
 			defer batchWg.Done()
-			batchQueue.WaitForRxShutdown()
+			readyQueue.WaitForRxShutdown()
 			time.Sleep(5 * time.Second)
 			batchingService.Flush()
 		}()
@@ -317,7 +321,7 @@ func main() {
 	deadLetterQueue.Start()
 	failureQueue.Start()
 	statusQueue.Start()
-	batchQueue.Start()
+	readyQueue.Start()
 	validateQueue.Start()
 
 	if configAnchorAuditEnabled, found := os.LookupEnv(models.Env_AnchorAuditEnabled); found {

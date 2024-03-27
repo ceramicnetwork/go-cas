@@ -85,11 +85,15 @@ func newQueue(
 			MaxWorkers:                        int(maxWorkers),
 			MaxInflightReceiveMessageRequests: int(maxInflightRequests),
 		}
+		var consumer *gosqs.SQSConsumer = nil
+		if callback != nil {
+			consumer = gosqs.NewConsumer(qOpts, publisher, callback)
+		}
 		return &queue{
 			opts.QueueType,
 			index,
 			publisher,
-			gosqs.NewConsumer(qOpts, publisher, callback),
+			consumer,
 			monitor,
 			logger,
 		}, arn, nil
@@ -106,6 +110,7 @@ func (p queue) SendMessage(ctx context.Context, event any) (string, error) {
 	}
 }
 
+// TODO: Check for nil consumer
 func (p queue) Start() {
 	p.consumer.Start()
 	p.logger.Infof("%s: started", p.queueType)

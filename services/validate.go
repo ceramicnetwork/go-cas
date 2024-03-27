@@ -22,13 +22,13 @@ func NewValidationService(stateDb models.StateRepository, metricService models.M
 	return &ValidationService{stateDb, nil, nil, metricService, logger, false}
 }
 
-func (v ValidationService) Start(readyPublisher models.QueuePublisher, statusPublisher models.QueuePublisher) {
+func (v *ValidationService) Start(readyPublisher models.QueuePublisher, statusPublisher models.QueuePublisher) {
 	v.readyPublisher = readyPublisher
 	v.statusPublisher = statusPublisher
 	v.initialized = true
 }
 
-func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
+func (v *ValidationService) Validate(ctx context.Context, msgBody string) error {
 	if !v.initialized {
 		v.logger.Fatalf("validation service not initialized")
 	}
@@ -127,7 +127,7 @@ func (v ValidationService) Validate(ctx context.Context, msgBody string) error {
 	}
 }
 
-func (v ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {
+func (v *ValidationService) sendStatusMsg(ctx context.Context, id uuid.UUID, status models.RequestStatus) error {
 	statusMsg := &models.RequestStatusMessage{Id: id, Status: status}
 	if _, err := v.statusPublisher.SendMessage(ctx, statusMsg); err != nil {
 		v.logger.Errorf("error sending status message: %v, %v", statusMsg, err)
