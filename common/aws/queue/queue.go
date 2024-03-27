@@ -110,8 +110,10 @@ func (p queue) SendMessage(ctx context.Context, event any) (string, error) {
 	}
 }
 
-// TODO: Check for nil consumer
 func (p queue) Start() {
+	if p.consumer == nil {
+		p.logger.Fatalf("%s: consumer not configured", p.queueType)
+	}
 	p.consumer.Start()
 	p.logger.Infof("%s: started", p.queueType)
 }
