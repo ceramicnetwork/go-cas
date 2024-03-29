@@ -4,8 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"os"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 
 	"github.com/ceramicnetwork/go-cas/common"
 	"github.com/ceramicnetwork/go-cas/models"
@@ -55,7 +59,15 @@ func createBucket(ctx context.Context, client *s3.Client, bucket string) error {
 
 	if _, err := client.CreateBucket(httpCtx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
+		CreateBucketConfiguration: &types.CreateBucketConfiguration{
+			LocationConstraint: types.BucketLocationConstraint(os.Getenv("AWS_REGION")),
+		},
 	}); err != nil {
+		var ownedByYouErr *types.BucketAlreadyOwnedByYou
+		if errors.As(err, &ownedByYouErr) {
+			// This means that the bucket already exists and is owned by us, which is fine.
+			return nil
+		}
 		return err
 	}
 	return nil
