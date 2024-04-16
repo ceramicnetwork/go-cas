@@ -15,6 +15,8 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+var _ models.AnchorRepository = &AnchorDatabase{}
+
 type AnchorDatabase struct {
 	opts   anchorDbOpts
 	logger models.Logger

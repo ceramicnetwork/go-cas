@@ -19,6 +19,8 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+var _ models.StateRepository = &StateDatabase{}
+
 type StateDatabase struct {
 	client          *dynamodb.Client
 	checkpointTable string
