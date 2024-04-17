@@ -24,7 +24,6 @@ type RequestPoller struct {
 	validatePublisher  models.QueuePublisher
 	logger             models.Logger
 	notif              models.Notifier
-	metricService      models.MetricService
 	tick               time.Duration
 	endCheckpointDelta time.Duration
 }
