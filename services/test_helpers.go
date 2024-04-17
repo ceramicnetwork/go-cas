@@ -40,6 +40,10 @@ func (m *MockAnchorRepository) GetRequests(_ context.Context, _ models.RequestSt
 	}, nil
 }
 
+func (m *MockAnchorRepository) RequestCount(_ context.Context, _ models.RequestStatus) (int, error) {
+	return 0, nil
+}
+
 func (m *MockAnchorRepository) UpdateStatus(_ context.Context, id uuid.UUID, status models.RequestStatus, allowedSourceStatuses []models.RequestStatus) error {
 	if m.shouldFailUpdate {
 		return fmt.Errorf("failed to update status")
@@ -214,7 +218,11 @@ func (m *MockMetricService) Count(ctx context.Context, name models.MetricName, v
 	return nil
 }
 
-func (m *MockMetricService) Distribution(ctx context.Context, name models.MetricName, val int) error {
+func (m *MockMetricService) Gauge(_ context.Context, _ models.MetricName, _ models.ResourceMonitor) error {
+	return nil
+}
+
+func (m *MockMetricService) Distribution(_ context.Context, name models.MetricName, val int) error {
 	m.mx.Lock()
 	defer m.mx.Unlock()
 	if m.distributions == nil {
