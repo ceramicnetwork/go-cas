@@ -36,12 +36,17 @@ type QueueMonitor interface {
 	GetUtilization(ctx context.Context) (int, int, error)
 }
 
+type ResourceMonitor interface {
+	GetValue(ctx context.Context) (int, error)
+}
+
 type Notifier interface {
 	SendAlert(title, desc, content string) error
 }
 
 type MetricService interface {
 	Count(ctx context.Context, name MetricName, val int) error
+	Gauge(ctx context.Context, name MetricName, monitor ResourceMonitor) error
 	Distribution(ctx context.Context, name MetricName, val int) error
 	QueueGauge(ctx context.Context, queueName string, monitor QueueMonitor) error
 	Shutdown(ctx context.Context)

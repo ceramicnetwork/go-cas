@@ -78,13 +78,6 @@ func (p RequestPoller) Run(ctx context.Context) {
 			return
 		default:
 			startCheckpoint = p.getUnprocessedRequests(ctx, startCheckpoint)
-			count, err := p.anchorDb.RequestCount(ctx, models.RequestStatus_Pending)
-			if err != nil {
-				p.logger.Errorf("error counting requests: %v", err)
-			} else if count > 0 {
-				p.logger.Infof("found %d unprocessed requests", count)
-				p.metricService.Count(models.MetricName_UnprocessedRequests, 1)
-			}
 			// Sleep even if we had errors so that we don't get stuck in a tight loop
 			time.Sleep(p.tick)
 		}

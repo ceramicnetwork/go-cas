@@ -83,6 +83,25 @@ func (o OtlMetricService) Count(ctx context.Context, name models.MetricName, val
 	return nil
 }
 
+func (o OtlMetricService) Gauge(ctx context.Context, name models.MetricName, monitor models.ResourceMonitor) error {
+	gauge, err := o.meter.Int64ObservableGauge(fmt.Sprintf("%s:%s_gauge", o.caller, name))
+	if err != nil {
+		return err
+	}
+	_, err = o.meter.RegisterCallback(
+		func(_ context.Context, obs metric.Observer) error {
+			if val, err := monitor.GetValue(ctx); err != nil {
+				return err
+			} else {
+				obs.ObserveInt64(gauge, int64(val))
+				return nil
+			}
+		},
+		gauge,
+	)
+	return err
+}
+
 func (o OtlMetricService) Distribution(ctx context.Context, name models.MetricName, val int) error {
 	fullname := fmt.Sprintf("%s:%s_histogram", o.caller, name)
 	histogram, err := o.meter.Int64Histogram(fullname)
