@@ -12,6 +12,7 @@ import (
 type AnchorRepository interface {
 	GetRequests(ctx context.Context, status RequestStatus, newerThan time.Time, olderThan time.Time, limit int) ([]*AnchorRequest, error)
 	UpdateStatus(ctx context.Context, id uuid.UUID, status RequestStatus, allowedSourceStatuses []RequestStatus) error
+	RequestCount(ctx context.Context, status RequestStatus) (int, error)
 }
 
 type StateRepository interface {

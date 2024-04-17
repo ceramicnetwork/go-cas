@@ -50,6 +50,37 @@ func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.Reques
 	)
 }
 
+func (adb *AnchorDatabase) RequestCount(ctx context.Context, status models.RequestStatus) (int, error) {
+	query := "SELECT COUNT(*) FROM request WHERE status = $1"
+	dbCtx, dbCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
+	defer dbCancel()
+
+	connUrl := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s",
+		adb.opts.User,
+		adb.opts.Password,
+		adb.opts.Host,
+		adb.opts.Port,
+		adb.opts.Name,
+	)
+	conn, err := pgx.Connect(dbCtx, connUrl)
+	if err != nil {
+		adb.logger.Errorf("error connecting to db: %v", err)
+		return nil, err
+	}
+	count, err := conn.Exec(
+		dbCtx,
+		query,
+		status,
+	)
+	conn.Close(dbCtx)
+	if err != nil {
+		adb.logger.Errorf("error counting requests: %v", err)
+		return 0, err
+	}
+	return count, nil
+}
+
 func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) ([]*models.AnchorRequest, error) {
 	dbCtx, dbCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer dbCancel()
