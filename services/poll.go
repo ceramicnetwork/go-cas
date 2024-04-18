@@ -76,59 +76,64 @@ func (p RequestPoller) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			endCheckpoint := time.Now().UTC().Add(-p.endCheckpointDelta)
-			anchorReqs, err := p.anchorDb.GetRequests(
-				ctx,
-				models.RequestStatus_Pending,
-				startCheckpoint,
-				endCheckpoint,
-				dbLoadLimit,
-			)
-			if err != nil {
-				p.logger.Errorf("error loading requests: %v", err)
-			} else if len(anchorReqs) > 0 {
-				p.logger.Debugw(
-					fmt.Sprintf("%d unprocessed requests since last checkpoint at %s", len(anchorReqs), startCheckpoint),
-					"reqs", anchorReqs,
-				)
-				// Send an alert because we shouldn't have found any old unprocessed requests
-				err = p.notif.SendAlert(
-					models.AlertTitle,
-					models.AlertDesc_Unprocessed,
-					fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint),
-				)
-				if err != nil {
-					p.logger.Errorf("error sending alert: %v", err)
-				}
-
-				anchorReqMsgs := make([]*models.AnchorRequestMessage, len(anchorReqs))
-				for idx, anchorReq := range anchorReqs {
-					anchorReqMsgs[idx] = &models.AnchorRequestMessage{
-						Id:        anchorReq.Id,
-						StreamId:  anchorReq.StreamId,
-						Cid:       anchorReq.Cid,
-						Origin:    anchorReq.Origin,
-						Timestamp: anchorReq.Timestamp,
-						CreatedAt: anchorReq.CreatedAt,
-					}
-				}
-				// It's possible the checkpoint was updated even if a particular request in the batch failed to be
-				// queued.
-				if nextCheckpoint := p.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(startCheckpoint) {
-					p.logger.Debugf("checkpoints: start=%s, next=%s", startCheckpoint, nextCheckpoint)
-					if _, err = p.stateDb.UpdateCheckpoint(ctx, models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
-						p.logger.Errorf("error updating checkpoint %s: %v", nextCheckpoint, err)
-					} else {
-						// Only update checkpoint in-memory once it's been written to DB. This means that it's possible
-						// that we might reprocess Anchor DB entries, but we can handle this.
-						startCheckpoint = nextCheckpoint
-					}
-				}
-			}
+			startCheckpoint = p.getUnprocessedRequests(ctx, startCheckpoint)
 			// Sleep even if we had errors so that we don't get stuck in a tight loop
 			time.Sleep(p.tick)
 		}
 	}
+}
+
+func (p RequestPoller) getUnprocessedRequests(ctx context.Context, startCheckpoint time.Time) time.Time {
+	endCheckpoint := time.Now().UTC().Add(-p.endCheckpointDelta)
+	anchorReqs, err := p.anchorDb.GetRequests(
+		ctx,
+		models.RequestStatus_Pending,
+		startCheckpoint,
+		endCheckpoint,
+		dbLoadLimit,
+	)
+	if err != nil {
+		p.logger.Errorf("error loading requests: %v", err)
+	} else if len(anchorReqs) > 0 {
+		p.logger.Debugw(
+			fmt.Sprintf("%d unprocessed requests since last checkpoint at %s", len(anchorReqs), startCheckpoint),
+			"reqs", anchorReqs,
+		)
+		// Send an alert because we shouldn't have found any old unprocessed requests
+		err = p.notif.SendAlert(
+			models.AlertTitle,
+			models.AlertDesc_Unprocessed,
+			fmt.Sprintf(models.AlertFmt_Unprocessed, len(anchorReqs), startCheckpoint),
+		)
+		if err != nil {
+			p.logger.Errorf("error sending alert: %v", err)
+		}
+
+		anchorReqMsgs := make([]*models.AnchorRequestMessage, len(anchorReqs))
+		for idx, anchorReq := range anchorReqs {
+			anchorReqMsgs[idx] = &models.AnchorRequestMessage{
+				Id:        anchorReq.Id,
+				StreamId:  anchorReq.StreamId,
+				Cid:       anchorReq.Cid,
+				Origin:    anchorReq.Origin,
+				Timestamp: anchorReq.Timestamp,
+				CreatedAt: anchorReq.CreatedAt,
+			}
+		}
+		// It's possible the checkpoint was updated even if a particular request in the batch failed to be
+		// queued.
+		if nextCheckpoint := p.sendRequestMessages(ctx, anchorReqMsgs); nextCheckpoint.After(startCheckpoint) {
+			p.logger.Debugf("checkpoints: start=%s, next=%s", startCheckpoint, nextCheckpoint)
+			if _, err = p.stateDb.UpdateCheckpoint(ctx, models.CheckpointType_RequestPoll, nextCheckpoint); err != nil {
+				p.logger.Errorf("error updating checkpoint %s: %v", nextCheckpoint, err)
+			} else {
+				// Only update checkpoint in-memory once it's been written to DB. This means that it's possible
+				// that we might reprocess Anchor DB entries, but we can handle this.
+				startCheckpoint = nextCheckpoint
+			}
+		}
+	}
+	return startCheckpoint
 }
 
 func (p RequestPoller) sendRequestMessages(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) time.Time {

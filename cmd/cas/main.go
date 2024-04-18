@@ -67,6 +67,11 @@ func main() {
 		logger.Fatalf("error creating metric service: %v", err)
 	}
 
+	// Create gauge for the number of pending anchor requests
+	if err = metricService.Gauge(serverCtx, models.MetricName_PendingAnchorRequests, db.NewDbMonitor(anchorDb)); err != nil {
+		logger.Fatalf("error creating pending anchor request gauge: %v", err)
+	}
+
 	// Queue publishers
 	var visibilityTimeout *time.Duration = nil
 	if configVisibilityTimeout, found := os.LookupEnv("QUEUE_VISIBILITY_TIMEOUT"); found {
