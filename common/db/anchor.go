@@ -85,7 +85,7 @@ func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.Reques
 			&anchorReq.Metadata,
 		)
 		if err != nil {
-			adb.logger.Errorf("error scanning db row: %v", err)
+			adb.logger.Errorf("error reading request: %v", err)
 			return nil, err
 		}
 		anchorRequests = append(anchorRequests, anchorReq)
@@ -116,7 +116,7 @@ func (adb *AnchorDatabase) RequestCount(ctx context.Context, status models.Reque
 	defer rows.Close()
 
 	if err != nil {
-		adb.logger.Errorf("error querying db: %v", err)
+		adb.logger.Errorf("error getting request count: %v", err)
 		return 0, err
 	}
 
