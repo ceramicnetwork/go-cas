@@ -39,10 +39,27 @@ func NewAnchorDb(logger models.Logger) *AnchorDatabase {
 }
 
 func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.RequestStatus, newerThan time.Time, olderThan time.Time, limit int) ([]*models.AnchorRequest, error) {
-	query := "SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 AND REQ.created_at < $3 ORDER BY REQ.created_at LIMIT $4"
-	rows, err := adb.query(
-		ctx,
-		query,
+	dbCtx, dbCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
+	defer dbCancel()
+
+	connUrl := fmt.Sprintf(
+		"postgres://%s:%s@%s:%s/%s",
+		adb.opts.User,
+		adb.opts.Password,
+		adb.opts.Host,
+		adb.opts.Port,
+		adb.opts.Name,
+	)
+	conn, err := pgx.Connect(dbCtx, connUrl)
+	if err != nil {
+		adb.logger.Errorf("error connecting to db: %v", err)
+		return nil, err
+	}
+	defer conn.Close(dbCtx)
+
+	rows, err := conn.Query(
+		dbCtx,
+		"SELECT REQ.id, REQ.cid, REQ.stream_id, REQ.origin, REQ.timestamp, REQ.created_at, META.metadata FROM request AS REQ LEFT JOIN metadata AS META USING (stream_id) WHERE status = $1 AND REQ.created_at > $2 AND REQ.created_at < $3 ORDER BY REQ.created_at LIMIT $4",
 		status,
 		newerThan.Format(common.DbDateFormat),
 		olderThan.Format(common.DbDateFormat),
@@ -77,30 +94,6 @@ func (adb *AnchorDatabase) GetRequests(ctx context.Context, status models.Reques
 }
 
 func (adb *AnchorDatabase) RequestCount(ctx context.Context, status models.RequestStatus) (int, error) {
-	query := "SELECT COUNT(*) FROM request WHERE status = $1"
-	rows, err := adb.query(
-		ctx,
-		query,
-		status,
-	)
-	defer rows.Close()
-
-	if err != nil {
-		adb.logger.Errorf("error getting request count: %v", err)
-		return 0, err
-	}
-
-	count := 0
-	if rows.Next() {
-		if err = rows.Scan(&count); err != nil {
-			adb.logger.Errorf("error reading request count: %v", err)
-			return 0, err
-		}
-	}
-	return count, nil
-}
-
-func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
 	dbCtx, dbCancel := context.WithTimeout(ctx, common.DefaultRpcWaitTime)
 	defer dbCancel()
 
@@ -115,11 +108,26 @@ func (adb *AnchorDatabase) query(ctx context.Context, sql string, args ...any) (
 	conn, err := pgx.Connect(dbCtx, connUrl)
 	if err != nil {
 		adb.logger.Errorf("error connecting to db: %v", err)
-		return nil, err
+		return 0, err
 	}
 	defer conn.Close(dbCtx)
 
-	return conn.Query(dbCtx, sql, args...)
+	rows, err := conn.Query(dbCtx, "SELECT COUNT(*) FROM request WHERE status = $1", status)
+	defer rows.Close()
+
+	if err != nil {
+		adb.logger.Errorf("error querying db: %v", err)
+		return 0, err
+	}
+
+	count := 0
+	if rows.Next() {
+		if err = rows.Scan(&count); err != nil {
+			adb.logger.Errorf("error reading request count: %v", err)
+			return 0, err
+		}
+	}
+	return count, nil
 }
 
 func (adb *AnchorDatabase) UpdateStatus(ctx context.Context, id uuid.UUID, status models.RequestStatus, allowedSourceStatuses []models.RequestStatus) error {
