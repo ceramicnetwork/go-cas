@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
 const defaultPollTick = time.Hour
-const dbLoadLimit = 1000
 
 // Only look for unprocessed requests as far back as 2 days
 const startCheckpointDelta = 48 * time.Hour
@@ -25,6 +25,7 @@ type RequestPoller struct {
 	logger             models.Logger
 	notif              models.Notifier
 	tick               time.Duration
+	dbLoadLimit        int
 	endCheckpointDelta time.Duration
 }
 
@@ -47,6 +48,14 @@ func NewRequestPoller(
 			pollTick = parsedPollTick
 		}
 	}
+	// Let the audit process load up to a full batch in one go
+	dbLoadLimit := models.DefaultAnchorBatchSize
+	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
+		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
+			dbLoadLimit = parsedAnchorBatchSize
+		}
+	}
+
 	return &RequestPoller{
 		anchorDb:           anchorDb,
 		stateDb:            stateDb,
@@ -54,6 +63,7 @@ func NewRequestPoller(
 		logger:             logger,
 		notif:              notif,
 		tick:               pollTick,
+		dbLoadLimit:        dbLoadLimit,
 		endCheckpointDelta: endCheckpointDelta,
 	}
 }
@@ -90,7 +100,7 @@ func (p RequestPoller) getUnprocessedRequests(ctx context.Context, startCheckpoi
 		models.RequestStatus_Pending,
 		startCheckpoint,
 		endCheckpoint,
-		dbLoadLimit,
+		p.dbLoadLimit,
 	)
 	if err != nil {
 		p.logger.Errorf("error loading requests: %v", err)
