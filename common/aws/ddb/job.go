@@ -44,12 +44,10 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 	jobParams := map[string]interface{}{
 		job.JobParam_Version:   models.WorkerVersion, // this will launch a CASv5 Worker
-		job.JobParam_Overrides: map[string]string{},
-	}
-	// Only enable continuous anchoring on Clay and Prod
-	if (jdb.env == cas.EnvTag_Tnet) || (jdb.env == cas.EnvTag_Prod) {
-		jobParams[job.JobParam_Overrides].(map[string]string)[models.AnchorOverrides_AppMode] = models.AnchorAppMode_ContinualAnchoring
-		jobParams[job.JobParam_Overrides].(map[string]string)[models.AnchorOverrides_SchedulerStopAfterNoOp] = "true"
+		job.JobParam_Overrides: map[string]string{
+			models.AnchorOverrides_AppMode: models.AnchorAppMode_ContinualAnchoring,
+			models.AnchorOverrides_SchedulerStopAfterNoOp: "true",
+		},
 	}
 	// If an override anchor contract address is available, pass it through to the job.
 	if contractAddress, found := os.LookupEnv(models.Env_AnchorContractAddress); found {
