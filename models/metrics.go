@@ -7,6 +7,7 @@ const (
 	MetricName_BatchCreated               MetricName = "batch_created"
 	MetricName_BatchIngressRequest        MetricName = "batch_ingress_request"
 	MetricName_BatchSize                  MetricName = "batch_size"
+	MetricName_BatchStored                MetricName = "batch_stored"
 	MetricName_FailureDlqMessage          MetricName = "failure_dlq_message"
 	MetricName_FailureMessage             MetricName = "failure_message"
 	MetricName_IpfsError                  MetricName = "ipfs_error"

@@ -63,7 +63,8 @@ func TestBatch(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			metricService := &MockMetricService{}
-			batchingServices := NewBatchingService(testCtx, logger, test.publisher, metricService)
+			s3BatchStore := &MockS3BatchStore{}
+			batchingServices := NewBatchingService(testCtx, test.publisher, s3BatchStore, metricService, logger)
 			ctx, cancel := context.WithCancel(testCtx)
 
 			var wg sync.WaitGroup
@@ -114,7 +115,7 @@ func TestBatch(t *testing.T) {
 				// as the batch requests are made simultaneously
 				numIngressRequests := 0
 				for i, numRequestsInBatch := range test.expectedNumberOfRequestsPerBatch {
-					if len(receivedBatches[i].Ids) != numRequestsInBatch {
+					if s3BatchStore.getBatchSize(receivedBatches[i].Id.String()) != numRequestsInBatch {
 						t.Errorf("Expected %v requests in batch %v. Contained %v requests", numRequestsInBatch, i+1, len(receivedBatches[i].Ids))
 					}
 					numIngressRequests += numRequestsInBatch
@@ -122,6 +123,7 @@ func TestBatch(t *testing.T) {
 
 				Assert(t, numIngressRequests, metricService.counts[models.MetricName_BatchIngressRequest], "Incorrect batch ingress request count")
 				Assert(t, 2, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
+				Assert(t, 2, metricService.counts[models.MetricName_BatchStored], "Incorrect stored batch count")
 			}
 		})
 	}

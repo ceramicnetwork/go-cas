@@ -27,6 +27,10 @@ type JobRepository interface {
 	QueryJob(ctx context.Context, id string) (*job.JobState, error)
 }
 
+type KeyValueRepository interface {
+	Store(ctx context.Context, key string, value interface{}) error
+}
+
 type QueuePublisher interface {
 	GetUrl() string
 	SendMessage(ctx context.Context, event any) (string, error)

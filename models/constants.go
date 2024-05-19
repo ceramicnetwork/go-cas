@@ -2,7 +2,7 @@ package models
 
 import "time"
 
-const DefaultAnchorBatchSize = 6144
+const DefaultAnchorBatchSize = 16383
 const DefaultAnchorBatchLinger = 1 * time.Hour
 
 const (

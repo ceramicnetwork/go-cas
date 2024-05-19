@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -17,12 +18,13 @@ import (
 
 type BatchingService struct {
 	batchPublisher models.QueuePublisher
+	batchStore     models.KeyValueRepository
 	batcher        *batch.Executor[*models.AnchorRequestMessage, *uuid.UUID]
 	metricService  models.MetricService
 	logger         models.Logger
 }
 
-func NewBatchingService(ctx context.Context, logger models.Logger, batchPublisher models.QueuePublisher, metricService models.MetricService) *BatchingService {
+func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublisher, batchStore models.KeyValueRepository, metricService models.MetricService, logger models.Logger) *BatchingService {
 	anchorBatchSize := models.DefaultAnchorBatchSize
 	if configAnchorBatchSize, found := os.LookupEnv(models.Env_AnchorBatchSize); found {
 		if parsedAnchorBatchSize, err := strconv.Atoi(configAnchorBatchSize); err == nil {
@@ -35,7 +37,12 @@ func NewBatchingService(ctx context.Context, logger models.Logger, batchPublishe
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
-	batchingService := BatchingService{batchPublisher: batchPublisher, metricService: metricService, logger: logger}
+	batchingService := BatchingService{
+		batchPublisher: batchPublisher,
+		batchStore:     batchStore,
+		metricService:  metricService,
+		logger:         logger,
+	}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
 	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](
 		beOpts,
@@ -74,15 +81,29 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 		anchorReqBatch.Ids[idx] = anchorReq.Id
 		batchResults[idx] = results.New[*uuid.UUID](&anchorReqBatch.Id, nil)
 	}
-	if _, err := b.batchPublisher.SendMessage(ctx, anchorReqBatch); err != nil {
-		b.logger.Errorf("error sending message: %v, %v", anchorReqBatch, err)
+
+	// Store the batch to S3 before sending it to the queue
+	key := fmt.Sprintf("cas/anchor/batch/%s", anchorReqBatch.Id.String())
+	if err := b.batchStore.Store(ctx, key, anchorReqBatch); err != nil {
+		b.logger.Errorf("error storing batch: %v, %v", anchorReqBatch.Id, err)
+		return nil, err
+	}
+	b.metricService.Count(ctx, models.MetricName_BatchStored, 1)
+
+	// Send just the batch ID in the message to the queue
+	anchorBatchMessage := models.AnchorBatchMessage{
+		Id:  anchorReqBatch.Id,
+		Ids: []uuid.UUID{},
+	}
+	if _, err := b.batchPublisher.SendMessage(ctx, anchorBatchMessage); err != nil {
+		b.logger.Errorf("error sending message: %v, %v", anchorReqBatch.Id, err)
 		return nil, err
 	}
 	b.metricService.Count(ctx, models.MetricName_BatchCreated, 1)
 	b.metricService.Distribution(ctx, models.MetricName_BatchSize, batchSize)
 	b.logger.Debugw(
 		"batch generated",
-		"batch", anchorReqBatch,
+		"batch", anchorReqBatch.Id,
 	)
 	return batchResults, nil
 }
