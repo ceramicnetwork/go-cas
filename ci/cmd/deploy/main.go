@@ -63,6 +63,6 @@ func createJob(ctx context.Context) (string, error) {
 				return "", err
 			}
 		}
-		return newJob.Job, nil
+		return newJob.JobId, nil
 	}
 }
