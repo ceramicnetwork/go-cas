@@ -121,8 +121,8 @@ func (m *MockJobRepository) CreateJob(_ context.Context) (string, error) {
 		return "", fmt.Errorf("failed to create job")
 	}
 	newJob := models.NewJob(job.JobType_Anchor, nil)
-	m.jobStore[newJob.Job] = &newJob
-	return newJob.Job, nil
+	m.jobStore[newJob.JobId] = &newJob
+	return newJob.JobId, nil
 }
 
 func (m *MockJobRepository) QueryJob(_ context.Context, id string) (*job.JobState, error) {
@@ -279,4 +279,21 @@ func NewMockIpfsCoreApi(node *core.IpfsNode) *MockIpfsCoreApi {
 
 func (i *MockIpfsCoreApi) PubSub() iface.PubSubAPI {
 	return &i.pubsubApi
+}
+
+type MockS3BatchStore struct {
+	batchStore map[string]int
+}
+
+func (s *MockS3BatchStore) Store(_ context.Context, _ string, batch interface{}) error {
+	if s.batchStore == nil {
+		s.batchStore = make(map[string]int)
+	}
+	anchorReqBatch := batch.(models.AnchorBatchMessage)
+	s.batchStore[anchorReqBatch.Id.String()] = len(anchorReqBatch.Ids)
+	return nil
+}
+
+func (s *MockS3BatchStore) getBatchSize(batchId string) int {
+	return s.batchStore[batchId]
 }

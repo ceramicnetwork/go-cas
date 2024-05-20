@@ -13,12 +13,14 @@ import (
 	"github.com/joho/godotenv"
 
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 
 	"github.com/ceramicnetwork/go-cas"
 	"github.com/ceramicnetwork/go-cas/common/aws/config"
 	"github.com/ceramicnetwork/go-cas/common/aws/ddb"
 	"github.com/ceramicnetwork/go-cas/common/aws/queue"
+	"github.com/ceramicnetwork/go-cas/common/aws/storage"
 	"github.com/ceramicnetwork/go-cas/common/db"
 	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/common/metrics"
@@ -53,9 +55,15 @@ func main() {
 	// HTTP clients
 	dynamoDbClient := dynamodb.NewFromConfig(awsCfg)
 	sqsClient := sqs.NewFromConfig(awsCfg)
+	s3Client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+		o.UsePathStyle = true
+	})
 
 	stateDb := ddb.NewStateDb(serverCtx, logger, dynamoDbClient)
 	jobDb := ddb.NewJobDb(serverCtx, logger, dynamoDbClient)
+
+	casBucket := "ceramic-" + os.Getenv(cas.Env_Env) + "-cas"
+	batchStore := storage.NewS3Store(serverCtx, logger, s3Client, casBucket)
 
 	discordHandler, err := notifs.NewDiscordHandler(logger)
 	if err != nil {
@@ -127,6 +135,7 @@ func main() {
 	// The Ready and Batch queues will need larger visibility timeouts than the other queues. Requests pulled from the
 	// Ready queue will remain in flight for the batch linger duration. Batches from the Batch queue will remain in
 	// flight as long as it takes for them to get anchored.
+	//
 	// These queues will thus allow a smaller maximum receive count before messages fall through to the DLQ. Detecting
 	// failures is harder given the longer visibility timeouts, so it's important that they be detected as soon as
 	// possible.
@@ -250,7 +259,7 @@ func main() {
 	// are available in the queue. The 2 multiplier is arbitrary but will allow two batches worth of requests to be read
 	// and processed in parallel.
 	maxBatchQueueWorkers := anchorBatchSize * 2
-	batchingService := services.NewBatchingService(serverCtx, logger, batchQueue, metricService)
+	batchingService := services.NewBatchingService(serverCtx, batchQueue, batchStore, metricService, logger)
 	batchingConsumer := queue.NewConsumer(logger, readyQueue, batchingService.Batch, &maxBatchQueueWorkers)
 
 	// The Validation service reads from the Validate queue and posts to the Ready and Status queues

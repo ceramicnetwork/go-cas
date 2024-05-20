@@ -20,6 +20,8 @@ import (
 	"github.com/ceramicnetwork/go-cas/models"
 )
 
+var _ models.JobRepository = &JobDatabase{}
+
 type JobDatabase struct {
 	ddbClient *dynamodb.Client
 	table     string
@@ -43,15 +45,15 @@ func (jdb *JobDatabase) createJobTable(ctx context.Context) error {
 
 func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 	jobParams := map[string]interface{}{
-		job.JobParam_Version:   models.WorkerVersion, // this will launch a CASv5 Worker
-		job.JobParam_Overrides: map[string]string{
-			models.AnchorOverrides_AppMode: models.AnchorAppMode_ContinualAnchoring,
+		job.AnchorJobParam_Version: models.WorkerVersion, // this will launch a CASv5 Worker
+		job.AnchorJobParam_Overrides: map[string]string{
+			models.AnchorOverrides_AppMode:                models.AnchorAppMode_ContinualAnchoring,
 			models.AnchorOverrides_SchedulerStopAfterNoOp: "true",
 		},
 	}
 	// If an override anchor contract address is available, pass it through to the job.
 	if contractAddress, found := os.LookupEnv(models.Env_AnchorContractAddress); found {
-		jobParams[job.JobParam_Overrides].(map[string]string)[models.AnchorOverrides_ContractAddress] = contractAddress
+		jobParams[job.AnchorJobParam_Overrides].(map[string]string)[models.AnchorOverrides_ContractAddress] = contractAddress
 	}
 	newJob := models.NewJob(job.JobType_Anchor, jobParams)
 	attributeValues, err := attributevalue.MarshalMapWithOptions(newJob, func(options *attributevalue.EncoderOptions) {
@@ -72,7 +74,7 @@ func (jdb *JobDatabase) CreateJob(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		} else {
-			return newJob.Job, nil
+			return newJob.JobId, nil
 		}
 	}
 }

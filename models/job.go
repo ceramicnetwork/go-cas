@@ -25,7 +25,7 @@ const (
 
 func NewJob(jobType job.JobType, params map[string]interface{}) job.JobState {
 	return job.JobState{
-		Job:    uuid.New().String(),
+		JobId:  uuid.New().String(),
 		Stage:  job.JobStage_Queued,
 		Type:   jobType,
 		Ts:     time.Now(),
