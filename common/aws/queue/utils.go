@@ -25,7 +25,6 @@ const (
 	QueueType_Status   QueueType = "status"
 	QueueType_Failure  QueueType = "failure"
 	QueueType_DLQ      QueueType = "dlq"
-	QueueType_IPFS     QueueType = "ipfs"
 )
 
 const defaultVisibilityTimeout = 5 * time.Minute
