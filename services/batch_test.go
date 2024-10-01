@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/ceramicnetwork/go-cas/common/loggers"
 	"github.com/ceramicnetwork/go-cas/models"
-	"github.com/google/uuid"
 )
 
 func TestBatch(t *testing.T) {
@@ -127,4 +129,83 @@ func TestBatch(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHourlyBatch(t *testing.T) {
+	t.Setenv("ANCHOR_BATCH_SIZE", "100")  // High value so we know the batch is not flushed due to size
+	t.Setenv("ANCHOR_BATCH_LINGER", "1h") // High value so we know the batch is not flushed due to linger
+	t.Setenv("ANCHOR_BATCH_FLUSH_INTERVAL", "1s")
+
+	requests := []*models.AnchorRequestMessage{
+		{Id: uuid.New()},
+		{Id: uuid.New()},
+		{Id: uuid.New()},
+		{Id: uuid.New()},
+		{Id: uuid.New()},
+		{Id: uuid.New()},
+	}
+	numRequests := len(requests)
+
+	encodedRequests := make([]string, len(requests))
+	for i, request := range requests {
+		if requestMessage, err := json.Marshal(request); err != nil {
+			t.Fatalf("Failed to encode request %v", request)
+		} else {
+			encodedRequests[i] = string(requestMessage)
+		}
+	}
+
+	logger := loggers.NewTestLogger()
+	testCtx := context.Background()
+	t.Run("flush batch at tick", func(t *testing.T) {
+		metricService := &MockMetricService{}
+		s3BatchStore := &MockS3BatchStore{}
+		publisher := &MockPublisher{messages: make(chan any, numRequests)}
+
+		ctx, cancel := context.WithCancel(testCtx)
+		batchingServices := NewBatchingService(testCtx, publisher, s3BatchStore, metricService, logger)
+
+		var wg sync.WaitGroup
+		for i := 1; i <= len(encodedRequests); i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+
+				if err := batchingServices.Batch(ctx, encodedRequests[i-1]); err != nil {
+					t.Errorf("Unexpected error received %v", err)
+				}
+			}()
+
+			// The flush interval is 1s so sleep for 2 seconds after every 2 requests to ensure the batch is flushed and
+			// contains 2 requests.
+			if i%2 == 0 {
+				<-time.After(2 * time.Second)
+			}
+		}
+		wg.Wait()
+
+		// Each batch should have 2 requests in it, so the number of batches should be half the number of requests.
+		receivedMessages := waitForMesssages(publisher.messages, numRequests/2)
+		cancel()
+
+		receivedBatches := make([]models.AnchorBatchMessage, len(receivedMessages))
+		for i, message := range receivedMessages {
+			if batch, ok := message.(models.AnchorBatchMessage); !ok {
+				t.Fatalf("Received invalid anchor batch message: %v", message)
+			} else {
+				receivedBatches[i] = batch
+			}
+		}
+
+		// Make sure each batch has 2 requests in it
+		for i := 0; i < len(receivedBatches); i++ {
+			if s3BatchStore.getBatchSize(receivedBatches[i].Id.String()) != 2 {
+				t.Errorf("Expected %v requests in batch %v. Contained %v requests", 2, i+1, len(receivedBatches[i].Ids))
+			}
+		}
+
+		Assert(t, numRequests, metricService.counts[models.MetricName_BatchIngressRequest], "Incorrect batch ingress request count")
+		Assert(t, numRequests/2, metricService.counts[models.MetricName_BatchCreated], "Incorrect created batch count")
+		Assert(t, numRequests/2, metricService.counts[models.MetricName_BatchStored], "Incorrect stored batch count")
+	})
 }
