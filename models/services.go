@@ -56,10 +56,6 @@ type MetricService interface {
 	Shutdown(ctx context.Context)
 }
 
-type IpfsApi interface {
-	Publish(ctx context.Context, topic string, data []byte) error
-}
-
 type Logger interface {
 	Debugf(template string, args ...interface{})
 	Debugw(msg string, args ...interface{})

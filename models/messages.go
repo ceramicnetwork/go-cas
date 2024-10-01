@@ -24,9 +24,3 @@ type RequestStatusMessage struct {
 	Id     uuid.UUID     `json:"rid"`
 	Status RequestStatus `json:"sts"`
 }
-
-type IpfsPubsubPublishMessage struct {
-	CreatedAt time.Time `json:"createdAt" validate:"required"`
-	Topic     string    `json:"topic" validate:"required"`
-	Data      []byte    `json:"data" validate:"required"`
-}
