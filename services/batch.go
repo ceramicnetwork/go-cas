@@ -22,6 +22,8 @@ type BatchingService struct {
 	batcher        *batch.Executor[*models.AnchorRequestMessage, *uuid.UUID]
 	metricService  models.MetricService
 	logger         models.Logger
+	flushTicker    *time.Ticker
+	flushInterval  time.Duration
 }
 
 func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublisher, batchStore models.KeyValueRepository, metricService models.MetricService, logger models.Logger) *BatchingService {
@@ -37,11 +39,18 @@ func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublishe
 			anchorBatchLinger = parsedAnchorBatchLinger
 		}
 	}
+	anchorBatchFlushInterval := time.Hour // Default to 1 hour
+	if configAnchorBatchFlushInterval, found := os.LookupEnv("ANCHOR_BATCH_FLUSH_INTERVAL"); found {
+		if parsedAnchorBatchFlushInterval, err := time.ParseDuration(configAnchorBatchFlushInterval); err == nil {
+			anchorBatchFlushInterval = parsedAnchorBatchFlushInterval
+		}
+	}
 	batchingService := BatchingService{
 		batchPublisher: batchPublisher,
 		batchStore:     batchStore,
 		metricService:  metricService,
 		logger:         logger,
+		flushInterval:  anchorBatchFlushInterval,
 	}
 	beOpts := batch.Opts{MaxSize: anchorBatchSize, MaxLinger: anchorBatchLinger}
 	batchingService.batcher = batch.New[*models.AnchorRequestMessage, *uuid.UUID](
@@ -51,10 +60,11 @@ func NewBatchingService(ctx context.Context, batchPublisher models.QueuePublishe
 			return batchingService.batch(ctx, anchorReqs)
 		},
 	)
+	batchingService.startFlushTicker(ctx)
 	return &batchingService
 }
 
-func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
+func (b *BatchingService) Batch(ctx context.Context, msgBody string) error {
 	anchorReq := new(models.AnchorRequestMessage)
 	if err := json.Unmarshal([]byte(msgBody), anchorReq); err != nil {
 		return err
@@ -70,7 +80,7 @@ func (b BatchingService) Batch(ctx context.Context, msgBody string) error {
 	}
 }
 
-func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
+func (b *BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorRequestMessage) ([]results.Result[*uuid.UUID], error) {
 	batchSize := len(anchorReqs)
 	anchorReqBatch := models.AnchorBatchMessage{
 		Id:  uuid.New(),
@@ -108,9 +118,43 @@ func (b BatchingService) batch(ctx context.Context, anchorReqs []*models.AnchorR
 	return batchResults, nil
 }
 
-func (b BatchingService) Flush() {
-	// Flush the current batch however far along it's gotten in size or expiration. The caller needs to ensure that no
-	// more messages are sent to this service for processing once this function is called. Receiving more messages will
-	// cause workers to wait till the end of the batch expiration if there aren't enough messages to fill the batch.
+func (b *BatchingService) startFlushTicker(ctx context.Context) {
+	// Calculate the duration until the next tick
+	now := time.Now().UTC()
+	nextTick := now.Truncate(b.flushInterval).Add(b.flushInterval)
+	tillNextTick := nextTick.Sub(now)
+
+	// Wait for the initial duration before starting the ticker
+	time.AfterFunc(tillNextTick, func() {
+		b.Flush()
+		b.flushTicker = time.NewTicker(b.flushInterval)
+		go b.flushLoop(ctx)
+	})
+}
+
+func (b *BatchingService) flushLoop(ctx context.Context) {
+	for {
+		select {
+		case <-b.flushTicker.C:
+			b.Flush()
+		case <-ctx.Done():
+			b.flushTicker.Stop()
+			return
+		}
+	}
+}
+
+// Flush forces the batching service to flush any pending requests, however far along it's gotten in size or expiration.
+//
+// We're using this in two ways:
+//  1. The top of the hour UTC: We want to flush any pending requests at the top of the hour so that C1 nodes can send
+//     in their Merkle Tree roots for anchoring right before the top of the hour. This ensures that the gap between the
+//     anchor request being sent and it being anchored is predictable and small. Without this logic, the gap could be
+//     upto 1 hour, i.e. till the Scheduler builds a new batch and sends it to the CAS.
+//  2. At process shutdown: We want to flush any pending requests when the process is shutting down so that we don't
+//     lose any in-flight requests. The caller needs to ensure that no more messages are sent to this service for
+//     processing once this function is called. Receiving more messages will cause queue workers to wait till the end of
+//     the batch expiration if there aren't enough messages to fill the batch.
+func (b *BatchingService) Flush() {
 	b.batcher.Flush()
 }
